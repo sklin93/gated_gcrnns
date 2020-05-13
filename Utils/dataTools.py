@@ -19,17 +19,21 @@ import pickle as pkl
 import Utils.graphTools as graph
 import Utils.miscTools as misc
 
+import ipdb
+
 class _dataForClassification:
-    # Internal supraclass from which data classes inherit.
-    # There are certian methods that all Data classes must have:
-    #   getSamples(), evluate(), to() and astype().
-    # To avoid coding this methods over and over again, we create a class from
-    # which the data can inherit this basic methods.
-    # Note that this is called "ForClassification" since the evaluate method
-    # is only for classification evaluations.
-    # However, it is true that getSamples() might be useful beyond the 
-    # classification problem, so we might, eventually, consider a different
-    # internal class.
+    """    
+    Internal supraclass from which data classes inherit.
+    There are certian methods that all Data classes must have:
+      getSamples(), evluate(), to() and astype().
+    To avoid coding this methods over and over again, we create a class from
+    which the data can inherit this basic methods.
+    Note that this is called "ForClassification" since the evaluate method
+    is only for classification evaluations.
+    However, it is true that getSamples() might be useful beyond the 
+    classification problem, so we might, eventually, consider a different
+    internal class.
+    """
     def __init__(self):
         # Minimal set of attributes that all data classes should have
         self.dataType = None
@@ -1005,72 +1009,72 @@ import scipy.sparse
 import re
 
 def distance_sklearn_metrics(z, k=4, metric='euclidean'):
-	"""Compute exact pairwise distances."""
-	d = sklearn.metrics.pairwise.pairwise_distances(
-			z, metric=metric)
-	# k-NN graph.
-	idx = np.argsort(d)[:, 1:k+1]
-	d.sort()
-	d = d[:, 1:k+1]
-	return d, idx
+    """Compute exact pairwise distances."""
+    d = sklearn.metrics.pairwise.pairwise_distances(
+            z, metric=metric)
+    # k-NN graph.
+    idx = np.argsort(d)[:, 1:k+1]
+    d.sort()
+    d = d[:, 1:k+1]
+    return d, idx
 
 def adjacency(dist, idx):
-	"""Return the adjacency matrix of a kNN graph."""
-	M, k = dist.shape
-	assert M, k == idx.shape
-	assert dist.min() >= 0
+    """Return the adjacency matrix of a kNN graph."""
+    M, k = dist.shape
+    assert M, k == idx.shape
+    assert dist.min() >= 0
 
-	# Weights.
-	sigma2 = np.mean(dist[:, -1])**2
-	dist = np.exp(- dist**2 / sigma2)
+    # Weights.
+    sigma2 = np.mean(dist[:, -1])**2
+    dist = np.exp(- dist**2 / sigma2)
 
-	# Weight matrix.
-	I = np.arange(0, M).repeat(k)
-	J = idx.reshape(M*k)
-	V = dist.reshape(M*k)
-	W = scipy.sparse.coo_matrix((V, (I, J)), shape=(M, M))
+    # Weight matrix.
+    I = np.arange(0, M).repeat(k)
+    J = idx.reshape(M*k)
+    V = dist.reshape(M*k)
+    W = scipy.sparse.coo_matrix((V, (I, J)), shape=(M, M))
 
-	# No self-connections.
-	W.setdiag(0)
+    # No self-connections.
+    W.setdiag(0)
 
-	# Non-directed graph.
-	bigger = W.T > W
-	W = W - W.multiply(bigger) + W.T.multiply(bigger)
+    # Non-directed graph.
+    bigger = W.T > W
+    W = W - W.multiply(bigger) + W.T.multiply(bigger)
 
-	assert W.nnz % 2 == 0
-	assert np.abs(W - W.T).mean() < 1e-10
-	assert type(W) is scipy.sparse.csr.csr_matrix
-	return W
+    assert W.nnz % 2 == 0
+    assert np.abs(W - W.T).mean() < 1e-10
+    assert type(W) is scipy.sparse.csr.csr_matrix
+    return W
 
 def replace_random_edges(A, noise_level):
-	"""Replace randomly chosen edges by random edges."""
-	M, M = A.shape
-	n = int(noise_level * A.nnz // 2)
+    """Replace randomly chosen edges by random edges."""
+    M, M = A.shape
+    n = int(noise_level * A.nnz // 2)
 
-	indices = np.random.permutation(A.nnz//2)[:n]
-	rows = np.random.randint(0, M, n)
-	cols = np.random.randint(0, M, n)
-	vals = np.random.uniform(0, 1, n)
-	assert len(indices) == len(rows) == len(cols) == len(vals)
+    indices = np.random.permutation(A.nnz//2)[:n]
+    rows = np.random.randint(0, M, n)
+    cols = np.random.randint(0, M, n)
+    vals = np.random.uniform(0, 1, n)
+    assert len(indices) == len(rows) == len(cols) == len(vals)
 
-	A_coo = scipy.sparse.triu(A, format='coo')
-	assert A_coo.nnz == A.nnz // 2
-	assert A_coo.nnz >= n
-	A = A.tolil()
+    A_coo = scipy.sparse.triu(A, format='coo')
+    assert A_coo.nnz == A.nnz // 2
+    assert A_coo.nnz >= n
+    A = A.tolil()
 
-	for idx, row, col, val in zip(indices, rows, cols, vals):
-		old_row = A_coo.row[idx]
-		old_col = A_coo.col[idx]
+    for idx, row, col, val in zip(indices, rows, cols, vals):
+        old_row = A_coo.row[idx]
+        old_col = A_coo.col[idx]
 
-		A[old_row, old_col] = 0
-		A[old_col, old_row] = 0
-		A[row, col] = 1
-		A[col, row] = 1
+        A[old_row, old_col] = 0
+        A[old_col, old_row] = 0
+        A[row, col] = 1
+        A[col, row] = 1
 
-	A.setdiag(0)
-	A = A.tocsr()
-	A.eliminate_zeros()
-	return A
+    A.setdiag(0)
+    A = A.tocsr()
+    A.eliminate_zeros()
+    return A
         
 class TextDataset(object):
     def clean_text(self, num='substitute'):
@@ -1286,18 +1290,20 @@ class KStepPrediction():
                                                   np.power(self.sigmaTemporal,2)*np.eye(self.horizon) + 
                                                   np.power(self.rhoTemporal,2)*np.ones((self.horizon,self.horizon)),
                                                   (nTotal, G.N))
-        tempNoise = np.transpose(tempNoise, (2,0,1))
+        tempNoise = np.transpose(tempNoise, (2,0,1)) #(horizon, nTotal, G.N)
         # Create LS
         A = Wnorm # = A x_t + w (Gaussian noise)
-        for t in range(self.horizon):
+        for t in range(self.horizon-1): #ISSUE
+            # spatialNoise (for each t): (nTotal, G.N)
             spatialNoise = np.random.multivariate_normal(np.zeros(G.N), 
                                  np.power(self.sigmaSpatial,2)*np.eye(G.N) + 
                                  np.power(self.rhoSpatial,2)*np.ones((G.N,G.N)), nTotal)
-
             x_tplus1 = np.matmul(x_t,A) + spatialNoise + tempNoise[t, :, :]
             x_t = x_tplus1
             
             x = np.concatenate((x,x_t),axis=1)
+        # x now has shape: (nTotal, G.N * (horizon + 1))
+        # emmmm seems never used G.N * horizon : G.N * (horizon + 1) part. maybe for t in range(self.horizon-1): in above func?
         y = x[:,K*G.N:horizon*G.N]
         x = x[:,0:(horizon*G.N-K*G.N)] 
         # Now, we have the signals and the labels
@@ -1314,6 +1320,7 @@ class KStepPrediction():
         self.samples['test'] = {}
         self.samples['test']['signals'] = signals[nTrain+nValid:nTotal, :]
         self.samples['test']['labels'] = labels[nTrain+nValid:nTotal, :]
+
         # Change data to specified type and device
         self.astype(self.dataType)
         self.to(self.device)
@@ -1358,7 +1365,7 @@ class KStepPrediction():
                 # only avoid squeezing if we check that it has been sequeezed
                 # (or not)
                 if len(x.shape) == 1:
-                    x = x.reshape([1, x.shape[0]])
+                    x = x.reshape([1, x.shape[0]]) #ISSUE: should be x.shape[1]
                 # And assign the labels
                 y = y[args[0]]
 
@@ -1397,7 +1404,245 @@ class KStepPrediction():
         """
         lossValue = misc.batchTimeMSELoss(yHat,y.type(torch.float64))
         return lossValue
-    
+
+class MultiModalityPrediction():
+    """
+    Creates the dataset for a prediction problem supervised by 2 coarsed version of original signal
+
+    Initialization:
+
+    Input:
+        G (class): Graph on which to diffuse the process, needs an attribute
+            .N with the number of nodes (int) and attribute .W with the
+            adjacency matrix (np.array)
+        nTrain (int): number of training samples
+        nValid (int): number of validation samples
+        nTest (int): number of testing samples
+        horizon (int): length of the process
+        sigmaSpatial (float): spatial variance
+        sigmaTemporal (float): temporal variance
+        rhoSpatial (float): spatial correlation
+        rhoTemporal (float): temporal correlation
+        dataType (dtype): datatype for the samples created (default: np.float64)
+        device (device): if torch.Tensor datatype is selected, this is on what
+            device the data is saved.
+
+    Methods:
+
+    signals, labels = .getSamples(samplesType[, optionalArguments])
+        Input:
+            samplesType (string): 'train', 'valid' or 'test' to determine from
+                which dataset to get the samples from
+            optionalArguments:
+                0 optional arguments: get all the samples from the specified set
+                1 optional argument (int): number of samples to get (at random)
+                1 optional argument (list): specific indices of samples to get
+        Output:
+            signals (dtype.array): numberSamples x numberNodes
+            labels (dtype.array): numberSamples
+            >> Obs.: The 0th dimension matches the corresponding signal to its
+                respective label
+
+    .astype(type): change the type of the data matrix arrays.
+        Input:
+            type (dtype): target type of the variables (e.g. torch.float64,
+                numpy.float64, etc.)
+
+    .to(device): if dtype is torch.tensor, move them to the specified device.
+        Input:
+            device (string): target device to move the variables to (e.g. 'cpu',
+                'cuda:0', etc.)
+
+    RMSE = .evaluate(yHat, y, tol = 1e-9)
+        Input:
+            yHat (dtype.array): estimated labels (1-D binary vector)
+            y (dtype.array): correct labels (1-D binary vector)
+            >> Obs.: both arrays are of the same length
+            tol (float): numerical tolerance to consider two numbers to be equal
+        Output:
+            RMSE (float): root mean square error between y and yHat
+
+    """
+
+    def __init__(self, G, nTrain, nValid, nTest, horizon, F_t = 5,
+                sigmaSpatial = 1, sigmaTemporal = 0, rhoSpatial = 0, 
+                rhoTemporal = 0, dataType = np.float64, device = 'cpu'):
+        # store attributes
+        self.dataType = dataType
+        self.device = device
+        self.nTrain = nTrain
+        self.nValid = nValid
+        self.nTest = nTest
+        self.horizon = horizon
+        self.sigmaSpatial = sigmaSpatial
+        self.sigmaTemporal = sigmaTemporal
+        self.rhoSpatial = rhoSpatial
+        self.rhoTemporal = rhoTemporal
+        #\\\ Generate the samples
+        # Get the largest eigenvalue of the weighted adjacency matrix
+        EW, VW = graph.computeGFT(G.W, order = 'totalVariation')
+        eMax = np.max(EW)
+        # Normalize the matrix so that it doesn't explode
+        Wnorm = G.W / eMax
+        # total number of samples
+        nTotal = nTrain + nValid + nTest
+        # x_0
+        x_t = np.random.rand(nTotal,G.N);
+        x = [x_t]
+        # Temporal noise
+        tempNoise = np.random.multivariate_normal(np.zeros(self.horizon),
+                                                  np.power(self.sigmaTemporal,2)*np.eye(self.horizon) + 
+                                                  np.power(self.rhoTemporal,2)*np.ones((self.horizon,self.horizon)),
+                                                  (nTotal, G.N))
+        tempNoise = np.transpose(tempNoise, (2,0,1)) #(horizon, nTotal, G.N)
+        # Create LS
+        A = Wnorm # = A x_t + w (Gaussian noise)
+        for t in range(self.horizon-1):
+            # spatialNoise (for each t): (nTotal, G.N)
+            spatialNoise = np.random.multivariate_normal(np.zeros(G.N), 
+                                 np.power(self.sigmaSpatial,2)*np.eye(G.N) + 
+                                 np.power(self.rhoSpatial,2)*np.ones((G.N,G.N)), nTotal)
+            x_tplus1 = np.matmul(x_t,A) + spatialNoise + tempNoise[t, :, :]
+            x_t = x_tplus1
+            x.append(x_t)
+
+        x = np.stack(x, axis=-1) # (nTotal, G.N, horizon)
+        
+        # synthetic fMRI (coarse temporal) and EEG (coarse spacial)
+        F = self._gen_F(x, F_t)
+        E = self._gen_E(x, G.assign_dict)
+        # x = x.transpose(0, 2, 1).reshape(x.shape[0], -1) # x (the underlying signal) has shape: (nTotal, G.N * horizon)
+
+        # signals and labels for F
+        F_signals = F[:, : - G.N] 
+        F_labels = F[:, G.N : ]
+        # signals and labels for E
+        E_signals = E[:, : - len(G.assign_dict)]
+        E_labels = E[:, len(G.assign_dict): ]
+        # Split and save them
+        self.samples = {}
+        self.samples['train'] = {}
+        self.samples['train']['F_signals'] = F_signals[0:nTrain, :]
+        self.samples['train']['F_labels'] = F_labels[0:nTrain, :]
+        self.samples['train']['E_signals'] = E_signals[0:nTrain, :]
+        self.samples['train']['E_labels'] = E_labels[0:nTrain, :]
+        self.samples['valid'] = {} 
+        self.samples['valid']['F_signals'] = F_signals[nTrain:nTrain+nValid, :]
+        self.samples['valid']['F_labels'] = F_labels[nTrain:nTrain+nValid, :]
+        self.samples['valid']['E_signals'] = E_signals[nTrain:nTrain+nValid, :]
+        self.samples['valid']['E_labels'] = E_labels[nTrain:nTrain+nValid, :]
+        self.samples['test'] = {}
+        self.samples['test']['F_signals'] = F_signals[nTrain+nValid:nTotal, :]
+        self.samples['test']['F_labels'] = F_labels[nTrain+nValid:nTotal, :]
+        self.samples['test']['E_signals'] = E_signals[nTrain+nValid:nTotal, :]
+        self.samples['test']['E_labels'] = E_labels[nTrain+nValid:nTotal, :]
+
+        # Change data to specified type and device
+        self.astype(self.dataType)
+        self.to(self.device)
+
+    def _gen_F(self, x, F_t):
+        # synthetic F (select every F_t time step)
+        F = x[:, :, np.arange(0, x.shape[-1], F_t)]
+        return F.transpose(0, 2, 1).reshape(len(F), -1)
+        # return x[:, np.arange(0, self.horizon, F_t)]
+        
+    def _gen_E(self, x, assign_dict):
+        # synthetic EEG (average signal within 4 clusters)
+        E = []
+        for k, v in assign_dict.items():
+            E.append(np.average(x[:, np.asarray(v), :], axis=1))
+        E = np.stack(E, axis=-1) # (nTotal, horizon, nCluster)
+        return E.reshape(len(E), -1)
+
+    def getSamples(self, samplesType, *args):
+        # type: train, valid, test
+        # args: 0 args, give back all
+        # args: 1 arg: if int, give that number of samples, chosen at random
+        # args: 1 arg: if list, give those samples precisely.
+        # Check that the type is one of the possible ones
+        # return: F signal, F label, E signal, E label
+        assert samplesType == 'train' or samplesType == 'valid' \
+                    or samplesType == 'test'
+        # Check that the number of extra arguments fits
+        assert len(args) <= 1
+        # If there are no arguments, just return all the desired samples
+        x = self.samples[samplesType]['F_signals']
+        y = self.samples[samplesType]['F_labels']
+        x2 = self.samples[samplesType]['E_signals']
+        y2 = self.samples[samplesType]['E_labels']
+        # If there's an argument, we have to check whether it is an int or a
+        # list
+        if len(args) == 1:
+            # If it is an int, just return that number of randomly chosen
+            # samples.
+            if type(args[0]) == int:
+                nSamples = x.shape[0] # total number of samples
+                # We can't return more samples than there are available
+                assert args[0] <= nSamples
+                # Randomly choose args[0] indices
+                selectedIndices = np.random.choice(nSamples, size = args[0],
+                                                   replace = False)
+                # The reshape is to avoid squeezing if only one sample is
+                # requested
+                x = x[selectedIndices,:].reshape([args[0], x.shape[1]])
+                y = y[selectedIndices]
+                x1 = x1[selectedIndices,:].reshape([args[0], x1.shape[1]])
+                y1 = y1[selectedIndices]
+            else:
+                # The fact that we put else here instead of elif type()==list
+                # allows for np.array to be used as indices as well. In general,
+                # any variable with the ability to index.
+                x = x[args[0], :]
+                x1 = x1[args[0], :]
+                # If only one element is selected, avoid squeezing. Given that
+                # the element can be a list (which has property len) or an
+                # np.array (which doesn't have len, but shape), then we can
+                # only avoid squeezing if we check that it has been sequeezed
+                # (or not)
+                if len(x.shape) == 1:
+                    x = x.reshape([1, x.shape[1]])
+                    x1 = x1.reshape([1, x1.shape[1]])
+                # And assign the labels
+                y = y[args[0]]
+                y1 = y1[args[0]]
+
+        return x, y, x1, y1
+
+    def astype(self, dataType):
+        if repr(dataType).find('torch') == -1:
+            for key in self.samples.keys():
+                for secondKey in self.samples[key].keys():
+                    self.samples[key][secondKey] \
+                                            = dataType(self.samples[key][secondKey])
+        else:
+            for key in self.samples.keys():
+                for secondKey in self.samples[key].keys():
+                    self.samples[key][secondKey] \
+                         = torch.tensor(self.samples[key][secondKey]).type(dataType)
+
+        if dataType is not self.dataType:
+            self.dataType = dataType
+
+    def to(self, device):
+        # This can only be done if they are torch tensors
+        if repr(self.dataType).find('torch') >= 0:
+            for key in self.samples.keys():
+                for secondKey in self.samples[key].keys():
+                    self.samples[key][secondKey] \
+                                       = self.samples[key][secondKey].to(device)
+
+            # If the device changed, save it.
+            if device is not self.device:
+                self.device = device
+
+    def evaluate(self, yHat, y, tol = 1e-9):
+        """
+        Return the MSE loss
+        """
+        lossValue = misc.batchTimeMSELoss(yHat,y.type(torch.float64))
+        return lossValue
+        
 class QuakeData():
     """
     QuakeData: Manages the dataset for earthquake epicenter estimation

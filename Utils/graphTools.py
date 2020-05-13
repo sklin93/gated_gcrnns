@@ -32,6 +32,7 @@ import numpy as np
 import scipy.sparse
 import scipy.spatial as sp
 from sklearn.cluster import SpectralClustering
+import ipdb
 
 zeroTolerance = 1e-9 # Values below this number are considered zero.
 
@@ -592,6 +593,7 @@ def createGraph(graphType, N, graphOptions):
         # zero.
         # Let's start by creating the matrix of pii and pij.
         # First, we need to know how many numbers on each community.
+        assign_dict = {} # cluster assignment dict
         nNodesC = [N//C] * C # Number of nodes per community: floor division
         c = 0 # counter for community
         while sum(nNodesC) < N: # If there are still nodes to put in communities
@@ -610,6 +612,7 @@ def createGraph(graphType, N, graphOptions):
             probMatrix[ nNodesCIndex[c] : nNodesCIndex[c+1] , \
                         nNodesCIndex[c] : nNodesCIndex[c+1] ] = \
                 np.ones([nNodesC[c], nNodesC[c]])
+            assign_dict[c] = np.arange(nNodesCIndex[c] , nNodesCIndex[c+1])
         # The matrix probMatrix has one in the block diagonal, which should
         # have probabilities p_ii and 0 in the offdiagonal that should have
         # probabilities p_ij. So that
@@ -632,6 +635,8 @@ def createGraph(graphType, N, graphOptions):
             W = W + W.T
             # Now let's check that it is connected
             connectedGraph = isConnected(W)
+        return W, assign_dict
+
     elif graphType == 'SmallWorld':
         # Function provided by Tuomo Mäki-Marttunen
         # Connectedness introduced by Dr. S. Segarra.
@@ -1070,7 +1075,11 @@ class Graph():
     def __init__(self, graphType, N, graphOptions):
         assert N > 0
         #\\\ Create the graph (Outputs adjacency matrix):
-        self.W = createGraph(graphType, N, graphOptions)
+        if graphType == 'SBM':
+            self.W, self.assign_dict = createGraph(graphType, N, graphOptions)
+        else:
+            self.W = createGraph(graphType, N, graphOptions)
+            self.assign_dict = {}
         # TODO: Let's start easy: make it just an N x N matrix. We'll see later
         # the rest of the things just as handling multiple features and stuff.
         #\\\ Number of nodes:
@@ -1254,7 +1263,7 @@ def metis(W, levels, rid=None):
         # TO DO
         # COMPUTE THE SIZE OF THE SUPERNODES AND THEIR DEGREE 
         #supernode_size = full(   sparse(cluster_id,  ones(N,1) ,
-        #	supernode_size )     )
+        #   supernode_size )     )
         #print(cluster_id)
         #print(supernode_size)
         #nd_sz{count+1}=supernode_size;
