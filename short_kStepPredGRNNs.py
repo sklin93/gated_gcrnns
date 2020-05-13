@@ -124,9 +124,10 @@ tMax = None # Maximum number of diffusion times (A^t for t < tMax)
 nDataRealizations = 1 # Number of data realizations
 nGraphRealizations = 1 # Number of graph realizations
 
-K = 5 # predict signal K steps ahead
-seqLen = K # sequence length
+K = 1 # predict signal K steps ahead
 num_timestep = 200
+seqLen = num_timestep - K # sequence length
+F_t = 5
 
 sigmaSpatial = 0.1
 sigmaTemporal = 0.1
@@ -168,7 +169,7 @@ lossFunction = misc.batchTimeL1Loss # This applies a softmax before feeding
 
 #\\\ Overall training options
 nEpochs = 20 # Number of epochs
-batchSize = 100 # Batch size
+batchSize = 50 # Batch size
 doLearningRateDecay = False # Learning rate decay
 learningRateDecayRate = 0.9 # Rate
 learningRateDecayPeriod = 1 # How many epochs after which update the lr
@@ -639,10 +640,10 @@ for graph in range(nGraphRealizations):
 
         #   Now that we have the list of nodes we are using as sources, then we
         #   can go ahead and generate the datasets.
-        data = Utils.dataTools.MultiModalityPrediction(G, nTrain, nValid, nTest, num_timestep, F_t=5, 
+        data = Utils.dataTools.MultiModalityPrediction(G, nTrain, nValid, nTest, num_timestep, F_t=F_t, 
                                                     sigmaSpatial=sigmaSpatial, sigmaTemporal=sigmaTemporal,
                                                     rhoSpatial=rhoSpatial, rhoTemporal=rhoTemporal)
-        ipdb.set_trace()
+        # ipdb.set_trace()
         data.astype(torch.float64)
 
         data.to(device)
@@ -1555,7 +1556,9 @@ for graph in range(nGraphRealizations):
         # This is the function that trains the models detailed in the dictionary
         # modelsGNN using the data, with the specified training options.
         train.MultipleModels(modelsGNN, data,
-                             nEpochs = nEpochs, batchSize = batchSize, seqLen = seqLen, stateFeat = F1, rnnStateFeat = rnnStateFeat,
+                             nEpochs = nEpochs, batchSize = batchSize, seqLen = seqLen, 
+                             F_t = F_t, assign_dicts = [G.assign_dict],
+                             stateFeat = F1, rnnStateFeat = rnnStateFeat,
                              **trainingOptions)
 
         #%%##################################################################
@@ -2027,3 +2030,4 @@ if doFigs and doSaveVars:
     plt.legend(list(meanEvalValid.keys()))
     allEvalValid.savefig(os.path.join(saveDirFigs,'allEvalValid.pdf'),
                     bbox_inches = 'tight')
+    

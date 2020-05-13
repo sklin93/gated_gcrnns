@@ -1569,8 +1569,8 @@ class MultiModalityPrediction():
         # If there are no arguments, just return all the desired samples
         x = self.samples[samplesType]['F_signals']
         y = self.samples[samplesType]['F_labels']
-        x2 = self.samples[samplesType]['E_signals']
-        y2 = self.samples[samplesType]['E_labels']
+        x1 = self.samples[samplesType]['E_signals']
+        y1 = self.samples[samplesType]['E_labels']
         # If there's an argument, we have to check whether it is an int or a
         # list
         if len(args) == 1:

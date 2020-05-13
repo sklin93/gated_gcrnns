@@ -313,17 +313,19 @@ class Model:
                 thisBatchIndices = idxEpoch[batchIndex[batch]
                                             : batchIndex[batch+1]]
                 # Get the samples
-                xTrain, yTrain = data.getSamples('train', thisBatchIndices)
+                xTrain, yTrain, x1Train, y1Train = data.getSamples('train', thisBatchIndices)
                 xTrain = xTrain.unsqueeze(1) # To account for just F=1 feature
-
+                x1Train = x1Train.unsqueeze(1)
                 # Set the ordering
                 xTrainOrdered = xTrain[:,:,self.order] # B x F x N
-
+                x1TrainOrdered = x1Train[:,:,self.order] # B x F x N
+                import ipdb; ipdb.set_trace()
                 # Reset gradients
                 self.archit.zero_grad()
 
                 # Obtain the output of the GNN
                 yHatTrain = self.archit(xTrainOrdered)
+                # TODO: averaging yHatTrain based on cluster, E supervision
 
                 # Compute loss
                 lossValueTrain = self.loss(yHatTrain, yTrain.type(torch.int64))

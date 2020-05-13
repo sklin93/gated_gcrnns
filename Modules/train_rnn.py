@@ -15,7 +15,8 @@ import datetime
 
 from scipy.io import savemat
 
-def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen, stateFeat, rnnStateFeat, **kwargs):
+def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen, 
+                F_t, assign_dicts, stateFeat, rnnStateFeat, **kwargs):
     """
     Trains multiple models simultaneously
 
@@ -27,6 +28,8 @@ def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen, stateFeat, rnnS
         nEpochs (int): number of epochs (passes over the dataset)
         batchSize (int): size of each minibatch
         seqLen (int): length of input sequence for recurrent architectures
+        F_t (int): the time resolution of F signals (have 1 F measurement on how many steps)
+        assign_dicts (list of dict): the cluster assignment of sample graphs
         stateFeat (int): number of state features of GCRNN architectures
         rnnStateFeat (int): number of state features of RNN architectures
 
@@ -209,15 +212,41 @@ def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen, stateFeat, rnnS
 
         # Initialize counter
         batch = 0 # batch counter
+        F_len = ((seqLen + 1) // F_t) - 1
         for batch in range(nBatches):
 
             # Extract the adequate batch
             thisBatchIndices = idxEpoch[batchIndex[batch] : batchIndex[batch+1]]
-            # Get the samples
-            xTrain, yTrain = data.getSamples('train', thisBatchIndices)
-            xTrain = xTrain.view(batchSize[batch],seqLen,-1)
-            yTrain = yTrain.view(batchSize[batch],seqLen,-1)
+            # Get the samples: F pairs, E pairs
+            xTrain, yTrain, x1Train, y1Train = data.getSamples('train', thisBatchIndices)
 
+            # expand xTrain (F) along the time dimension
+            xTrain = xTrain.view(batchSize[batch], F_len, -1)
+            xTrain = xTrain.repeat_interleave(F_t, dim=1)
+            yTrain = yTrain.view(batchSize[batch], F_len, -1)
+            yTrain = yTrain.repeat_interleave(F_t, dim=1)
+            # expand x1Train (E) along from cluster signal to graph signal
+            if len(assign_dicts) == 1:
+                # if all the graphs share a same cluster structure
+                assign_dict = assign_dicts[0]
+                # here uses F_len*F_t instead of seqLen as it's smaller
+                # I choose to cut overall signal into a same length (temporary, #TODO maybe different len)
+                x1Train = x1Train.view(batchSize[batch], seqLen, -1)[:, :F_len*F_t, :]
+                y1Train = y1Train.view(batchSize[batch], seqLen, -1)[:, :F_len*F_t, :]
+                _x1Train = torch.zeros_like(xTrain)
+                _y1Train = torch.zeros_like(yTrain)
+                # the last dimension should be cluster number
+                assert x1Train.shape[-1] == len(assign_dict) and y1Train.shape[-1] == len(assign_dict)
+                for k in range(len(assign_dict)):
+                    _x1Train[:, :, assign_dict[k]] = x1Train[:, :, k:k+1].repeat(1, 1, len(assign_dict[k]))
+                    _y1Train[:, :, assign_dict[k]] = y1Train[:, :, k:k+1].repeat(1, 1, len(assign_dict[k]))
+                x1Train = _x1Train; del _x1Train
+                y1Train = _y1Train; del _y1Train
+            else:
+                #TODO: different graphs (i.e. cluster assignments) for different samples
+                pass
+
+            import ipdb; ipdb.set_trace()
             if doPrint and printInterval > 0:
                 if (epoch * nBatches + batch) % printInterval == 0:
                     trainPreamble = ''
