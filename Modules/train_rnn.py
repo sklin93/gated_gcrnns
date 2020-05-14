@@ -14,6 +14,7 @@ import pickle
 import datetime
 
 from scipy.io import savemat
+import ipdb
 
 def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen, 
                 F_t, assign_dicts, stateFeat, rnnStateFeat, **kwargs):
@@ -221,10 +222,12 @@ def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen,
             xTrain, yTrain, x1Train, y1Train = data.getSamples('train', thisBatchIndices)
 
             # expand xTrain (F) along the time dimension
+            # no need to expand y
             xTrain = xTrain.view(batchSize[batch], F_len, -1)
             xTrain = xTrain.repeat_interleave(F_t, dim=1)
             yTrain = yTrain.view(batchSize[batch], F_len, -1)
-            yTrain = yTrain.repeat_interleave(F_t, dim=1)
+            # yTrain = yTrain.repeat_interleave(F_t, dim=1)
+
             # expand x1Train (E) along from cluster signal to graph signal
             if len(assign_dicts) == 1:
                 # if all the graphs share a same cluster structure
@@ -234,19 +237,18 @@ def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen,
                 x1Train = x1Train.view(batchSize[batch], seqLen, -1)[:, :F_len*F_t, :]
                 y1Train = y1Train.view(batchSize[batch], seqLen, -1)[:, :F_len*F_t, :]
                 _x1Train = torch.zeros_like(xTrain)
-                _y1Train = torch.zeros_like(yTrain)
+                # _y1Train = torch.zeros_like(yTrain)
                 # the last dimension should be cluster number
                 assert x1Train.shape[-1] == len(assign_dict) and y1Train.shape[-1] == len(assign_dict)
                 for k in range(len(assign_dict)):
                     _x1Train[:, :, assign_dict[k]] = x1Train[:, :, k:k+1].repeat(1, 1, len(assign_dict[k]))
-                    _y1Train[:, :, assign_dict[k]] = y1Train[:, :, k:k+1].repeat(1, 1, len(assign_dict[k]))
+                    # _y1Train[:, :, assign_dict[k]] = y1Train[:, :, k:k+1].repeat(1, 1, len(assign_dict[k]))
                 x1Train = _x1Train; del _x1Train
-                y1Train = _y1Train; del _y1Train
+                # y1Train = _y1Train; del _y1Train
             else:
                 #TODO: different graphs (i.e. cluster assignments) for different samples
                 pass
 
-            import ipdb; ipdb.set_trace()
             if doPrint and printInterval > 0:
                 if (epoch * nBatches + batch) % printInterval == 0:
                     trainPreamble = ''
@@ -258,20 +260,23 @@ def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen,
                             trainPreamble, epoch+1, batch+1))
 
             for key in modelsDict.keys():
-
-                # Set the ordering
+                # Set the ordering #ISSUE: why no ordering for y?
                 xTrainOrdered = xTrain[:,:,modelsDict[key].order] # B x F x N
-                
+                x1TrainOrdered = x1Train[:,:,modelsDict[key].order]
                 # Check if it is an RNN to add sequence dimension
                 if 'RNN' in modelsDict[key].name or 'rnn' in modelsDict[key].name or \
                                                     'Rnn' in modelsDict[key].name:
                     xTrainOrdered = xTrainOrdered.unsqueeze(2) # To account for just F=1 feature
-                    yTrainModel = yTrain.unsqueeze(2) # To account for just F=1 feature
+                    x1TrainOrdered = x1TrainOrdered.unsqueeze(2)
+                    yTrainModel = yTrain.unsqueeze(2)
+                    y1TrainModel = y1Train.unsqueeze(2)
 
                 else:
-                    xTrainOrdered = xTrainOrdered.view(batchSize[batch]*seqLen,1,-1)
-                    yTrainModel = yTrain.view(batchSize[batch]*seqLen,1,-1)
-                
+                    ipdb.set_trace() #check correctness
+                    xTrainOrdered = xTrainOrdered.view(batchSize[batch]*xTrainOrdered.shape[1],1,-1)
+                    yTrainModel = yTrain.view(batchSize[batch]*xTrainOrdered.shape[1],1,-1)
+                    x1TrainOrdered = x1TrainOrdered.view(batchSize[batch]*x1TrainOrdered.shape[1],1,-1)
+                    y1TrainModel = yT1rain.view(batchSize[batch]*x1TrainOrdered.shape[1],1,-1)
                 # Start measuring time
                 startTime = datetime.datetime.now()
 
@@ -283,20 +288,37 @@ def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen,
                                                     'GCRnn' in modelsDict[key].name:
                     # Obtain the output of the GCRNN
                     h0 = torch.zeros(batchSize[batch],stateFeat,xTrainOrdered.shape[3])
-                    yHatTrain = modelsDict[key].archit(xTrainOrdered, h0)
+                    signalHatTrain = modelsDict[key].archit(xTrainOrdered, h0)
+                    # averaging along t
+                    yHatTrain = signalHatTrain.reshape(batchSize[batch], F_len, F_t, 1, -1).mean(2)
+                    # averaging output signal for each cluster
+                    if len(assign_dicts) == 1:
+                        # if all the graphs share a same cluster structure
+                        assign_dict = assign_dicts[0]
+                        y1HatTrain = []
+                        for k in range(len(assign_dict)):
+                            y1HatTrain.append(signalHatTrain[:,:,:,assign_dict[k]].mean(3))
+                        y1HatTrain = torch.stack(y1HatTrain, dim=len(y1HatTrain[0].shape))
+                    else:
+                        #TODO: different graphs (i.e. cluster assignments) for different samples
+                        pass
+                
                 elif 'RNN' in modelsDict[key].name or 'rnn' in modelsDict[key].name or \
                                             'Rnn' in modelsDict[key].name:
-                    # Obtain the output of the GCRNN
+                    # Obtain the output of the RNN
+                    ipdb.set_trace() # TODO: dealing with output
                     h0 = torch.zeros(batchSize[batch],rnnStateFeat)
                     c0 = h0
                     yHatTrain = modelsDict[key].archit(xTrainOrdered, h0, c0)
                 else:
                     # Obtain the output of the GNN
+                    ipdb.set_trace() # TODO: dealing with output
                     yHatTrain = modelsDict[key].archit(xTrainOrdered)
                     yHatTrain = yHatTrain.unsqueeze(1)
 
-                # Compute loss
-                lossValueTrain = modelsDict[key].loss(yHatTrain,yTrainModel)
+                # Compute loss: F_loss + E_loss (E's y need to be contiguous..)
+                lossValueTrain = modelsDict[key].loss(yHatTrain, yTrainModel) \
+                                + modelsDict[key].loss(y1HatTrain, y1TrainModel)
 
                 # Compute gradients
                 lossValueTrain.backward()
@@ -314,7 +336,8 @@ def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen,
                 #   same value, but detaches it from the gradient, so that no
                 #   gradient operation is taken into account here.
                 #   (Alternatively, we could use a with torch.no_grad():)
-                accTrain = data.evaluate(yHatTrain.data, yTrainModel)
+                accTrain = (data.evaluate(yHatTrain.data, yTrainModel) \
+                        + data.evaluate(y1HatTrain.data, y1TrainModel)) / 2
 
                 # Logging values
                 if doLogging:
@@ -360,9 +383,30 @@ def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen,
             if (epoch * nBatches + batch) % validationInterval == 0:
                 # Validation:
                 nValid = data.nValid
-                xValid, yValid = data.getSamples('valid')
-                xValid = xValid.view(nValid,seqLen,-1)
-                yValid = yValid.view(nValid,seqLen,-1)
+                xValid, yValid , x1Valid, y1Valid = data.getSamples('valid')
+                # expand xValid (F) along the time dimension
+                xValid = xValid.view(nValid, F_len, -1)
+                xValid = xValid.repeat_interleave(F_t, dim=1)
+                yValid = yValid.view(nValid, F_len, -1)
+
+                # expand x1Valid (E) along from cluster signal to graph signal
+                if len(assign_dicts) == 1:
+                    # if all the graphs share a same cluster structure
+                    assign_dict = assign_dicts[0]
+                    # here uses F_len*F_t instead of seqLen as it's smaller
+                    # I choose to cut overall signal into a same length (temporary, #TODO maybe different len)
+                    x1Valid = x1Valid.view(nValid, seqLen, -1)[:, :F_len*F_t, :]
+                    y1Valid = y1Valid.view(nValid, seqLen, -1)[:, :F_len*F_t, :]
+                    _x1Valid = torch.zeros_like(xValid)
+                    # _y1Train = torch.zeros_like(yTrain)
+                    # the last dimension should be cluster number
+                    assert x1Valid.shape[-1] == len(assign_dict) and y1Valid.shape[-1] == len(assign_dict)
+                    for k in range(len(assign_dict)):
+                        _x1Valid[:, :, assign_dict[k]] = x1Valid[:, :, k:k+1].repeat(1, 1, len(assign_dict[k]))
+                    x1Valid = _x1Valid; del _x1Valid
+                else:
+                    #TODO: different graphs (i.e. cluster assignments) for different samples
+                    pass
 
                 if doPrint:
                     validPreamble = ''
@@ -376,14 +420,19 @@ def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen,
                 for key in modelsDict.keys():
                     # Set the ordering
                     xValidOrdered = xValid[:,:,modelsDict[key].order] # BxFxN
+                    x1ValidOrdered = x1Valid[:,:,modelsDict[key].order]
                     if 'RNN' in modelsDict[key].name or 'rnn' in modelsDict[key].name or \
                                                     'Rnn' in modelsDict[key].name:
                         xValidOrdered = xValidOrdered.unsqueeze(2)
+                        x1ValidOrdered = x1ValidOrdered.unsqueeze(2)
                         yValidModel = yValid.unsqueeze(2)
+                        y1ValidModel = y1Valid.unsqueeze(2)
                     else:
-                        xValidOrdered = xValidOrdered.view(nValid*seqLen,1,-1)
-                        yValidModel = yValid.view(nValid*seqLen,1,-1)
-                    
+                        ipdb.set_trace() #check correctness
+                        xValidOrdered = xValidOrdered.view(nValid*xValidOrdered.shape[1],1,-1)
+                        yValidModel = yValid.view(nValid*xValidOrdered.shape[1],1,-1)
+                        x1ValidOrdered = x1ValidOrdered.view(nValid*x1ValidOrdered.shape[1],1,-1)
+                        y1ValidModel = y1Valid.view(nValid*x1ValidOrdered.shape[1],1,-1)
                     # Start measuring time
                     startTime = datetime.datetime.now()
                     
@@ -395,28 +444,45 @@ def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen,
                         if 'GCRNN' in modelsDict[key].name or 'gcrnn' in modelsDict[key].name or \
                                                     'GCRnn' in modelsDict[key].name:
                             h0v = torch.zeros(nValid,stateFeat,xValidOrdered.shape[3])
-                            yHatValid = modelsDict[key].archit(xValidOrdered,h0v)
+                            signalHatValid = modelsDict[key].archit(xValidOrdered,h0v)
+                            # averaging output signal along t
+                            yHatValid = signalHatValid.reshape(nValid, F_len, F_t, 1, -1).mean(2)
+                            # averaging output signal for each cluster
+                            if len(assign_dicts) == 1:
+                                # if all the graphs share a same cluster structure
+                                assign_dict = assign_dicts[0]
+                                y1HatValid = []
+                                for k in range(len(assign_dict)):
+                                    y1HatValid.append(signalHatValid[:,:,:,assign_dict[k]].mean(3))
+                                y1HatValid = torch.stack(y1HatValid, dim=len(y1HatValid[0].shape))
+                            else:
+                                #TODO: different graphs (i.e. cluster assignments) for different samples
+                                pass
+
                         elif 'RNN' in modelsDict[key].name or 'rnn' in modelsDict[key].name or \
                                                     'Rnn' in modelsDict[key].name:
                             # Obtain the output of the GCRNN
+                            ipdb.set_trace() # TODO: dealing with output
                             h0v = torch.zeros(nValid,rnnStateFeat)
                             c0v = h0
                             yHatValid = modelsDict[key].archit(xValidOrdered,h0v,c0v)
                         else:
+                            ipdb.set_trace() # TODO: dealing with output
                             yHatValid = modelsDict[key].archit(xValidOrdered)
                             yHatValid = yHatValid.unsqueeze(1)
 
-                       # Compute loss
-                        lossValueValid = modelsDict[key]\
-                                       .loss(yHatValid,yValidModel)
-                                       
+                        # Compute loss: F_loss + E_loss (E's y need to be contiguous..)
+                        lossValueValid = modelsDict[key].loss(yHatValid, yValidModel) \
+                                        + modelsDict[key].loss(y1HatValid, y1ValidModel)
+
                         # Finish measuring time
                         endTime = datetime.datetime.now()
                         
                         timeElapsed = abs(endTime - startTime).total_seconds()
 
                         # Compute accuracy:
-                        accValid = data.evaluate(yHatValid, yValidModel)
+                        accValid = (data.evaluate(yHatValid, yValidModel) \
+                                + data.evaluate(y1HatValid, y1ValidModel)) / 2
 
                         # Logging values
                         if doLogging:

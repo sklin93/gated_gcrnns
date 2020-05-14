@@ -1555,9 +1555,10 @@ for graph in range(nGraphRealizations):
 
         # This is the function that trains the models detailed in the dictionary
         # modelsGNN using the data, with the specified training options.
+        assign_dicts = [G.assign_dict]
         train.MultipleModels(modelsGNN, data,
                              nEpochs = nEpochs, batchSize = batchSize, seqLen = seqLen, 
-                             F_t = F_t, assign_dicts = [G.assign_dict],
+                             F_t = F_t, assign_dicts = assign_dicts,
                              stateFeat = F1, rnnStateFeat = rnnStateFeat,
                              **trainingOptions)
 
@@ -1576,10 +1577,31 @@ for graph in range(nGraphRealizations):
         ########
         # DATA #
         ########
+        F_len = ((seqLen + 1) // F_t) - 1
+        xTest, yTest, x1Test, y1Test = data.getSamples('test')
+        # expand xTest (F) along the time dimension
+        xTest = xTest.view(nTest, F_len, -1)
+        xTest = xTest.repeat_interleave(F_t, dim=1)
+        yTest = yTest.view(nTest, F_len, -1)
 
-        xTest, yTest = data.getSamples('test')
-        xTest = xTest.view(nTest,seqLen,-1)
-        yTest = yTest.view(nTest,seqLen,-1)
+        # expand x1Test (E) along from cluster signal to graph signal
+        if len(assign_dicts) == 1:
+            # if all the graphs share a same cluster structure
+            assign_dict = assign_dicts[0]
+            # here uses F_len*F_t instead of seqLen as it's smaller
+            # I choose to cut overall signal into a same length (temporary, #TODO maybe different len)
+            x1Test = x1Test.view(nTest, seqLen, -1)[:, :F_len*F_t, :]
+            y1Test = y1Test.view(nTest, seqLen, -1)[:, :F_len*F_t, :]
+            _x1Test = torch.zeros_like(xTest)
+            # _y1Train = torch.zeros_like(yTrain)
+            # the last dimension should be cluster number
+            assert x1Test.shape[-1] == len(assign_dict) and y1Test.shape[-1] == len(assign_dict)
+            for k in range(len(assign_dict)):
+                _x1Test[:, :, assign_dict[k]] = x1Test[:, :, k:k+1].repeat(1, 1, len(assign_dict[k]))
+            x1Test = _x1Test; del _x1Test
+        else:
+            #TODO: different graphs (i.e. cluster assignments) for different samples
+            pass
 
         ##############
         # BEST MODEL #
@@ -1592,32 +1614,51 @@ for graph in range(nGraphRealizations):
             # Update order and adapt dimensions (this data has one input feature,
             # so we need to add that dimension; make it from B x N to B x F x N)
             xTestOrdered = xTest[:,:,modelsGNN[key].order]
+            x1TestOrdered = x1Test[:,:,modelsGNN[key].order]
             if 'RNN' in modelsGNN[key].name or 'rnn' in modelsGNN[key].name or \
                                                     'Rnn' in modelsGNN[key].name:
                 xTestOrdered = xTestOrdered.unsqueeze(2)
                 yTestModel = yTest.unsqueeze(2)
-
+                x1TestOrdered = x1TestOrdered.unsqueeze(2)
+                y1TestModel = y1Test.unsqueeze(2)
             else:
-                    xTestOrdered = xTestOrdered.view(nTest*seqLen,1,-1)
-                    yTestModel = yTest.view(nTest*seqLen,1,-1)
-
+                ipdb.set_trace() #check correctness
+                xTestOrdered = xTestOrdered.view(nTest*xTestOrdered.shape[1],1,-1)
+                yTestModel = yTest.view(nTest*xTestOrdered.shape[1],1,-1)
+                x1TestOrdered = x1TestOrdered.view(nTest*x1TestOrdered.shape[1],1,-1)
+                y1TestModel = y1Test.view(nTest*x1TestOrdered.shape[1],1,-1)
+            
             with torch.no_grad():
                 # Process the samples
                 if 'GCRNN' in modelsGNN[key].name or 'gcrnn' in modelsGNN[key].name or \
                                                     'GCRnn' in modelsGNN[key].name:
                     h0t = torch.zeros(nTest,F1,nNodes)
-                    yHatTest = modelsGNN[key].archit(xTestOrdered,h0t)
+                    signalHatTest = modelsGNN[key].archit(xTestOrdered,h0t)
+                    # averaging output signal along t
+                    yHatTest = signalHatTest.reshape(nTest, F_len, F_t, 1, -1).mean(2)
+                    # averaging output signal for each cluster
+                    if len(assign_dicts) == 1:
+                        # if all the graphs share a same cluster structure
+                        assign_dict = assign_dicts[0]
+                        y1HatTest = []
+                        for k in range(len(assign_dict)):
+                            y1HatTest.append(signalHatTest[:,:,:,assign_dict[k]].mean(3))
+                        y1HatTest = torch.stack(y1HatTest, dim=len(y1HatTest[0].shape))
+                    
                 elif 'RNN' in modelsGNN[key].name or 'rnn' in modelsGNN[key].name or \
                                                     'Rnn' in modelsGNN[key].name:
+                    ipdb.set_trace() # TODO: dealing with output
                     h0t = torch.zeros(nTest,rnnStateFeat)
                     c0t = h0t
                     yHatTest = modelsGNN[key].archit(xTestOrdered,h0t,c0t)
                 else:
+                    ipdb.set_trace() # TODO: dealing with output
                     yHatTest = modelsGNN[key].archit(xTestOrdered)
                     yHatTest = yHatTest.unsqueeze(1)
 
                 # We compute the accuracy
-                thisAccBest = data.evaluate(yHatTest, yTestModel)
+                thisAccBest = (data.evaluate(yHatTest, yTestModel) \
+                            + data.evaluate(y1HatTest, y1TestModel)) / 2
 
             if doPrint:
                 print("%s: %4.4f" % (key, thisAccBest ), flush = True)
@@ -1651,34 +1692,52 @@ for graph in range(nGraphRealizations):
         for key in modelsGNN.keys():
             modelsGNN[key].load(label = 'Last')
             xTestOrdered = xTest[:,:,modelsGNN[key].order]
-
-            xTestOrdered = xTest[:,:,modelsGNN[key].order]
+            x1TestOrdered = x1Test[:,:,modelsGNN[key].order]
             if 'RNN' in modelsGNN[key].name or 'rnn' in modelsGNN[key].name or \
                                                 'Rnn' in modelsGNN[key].name:
                 xTestOrdered = xTestOrdered.unsqueeze(2)
-                yTestModel = yTest.unsqueeze(2)           
+                yTestModel = yTest.unsqueeze(2)
+                x1TestOrdered = x1TestOrdered.unsqueeze(2)
+                y1TestModel = y1Test.unsqueeze(2)         
             
             else:
-                xTestOrdered = xTestOrdered.view(nTest*seqLen,1,-1)
-                yTestModel = yTest.view(nTest*seqLen,1,-1)
+                ipdb.set_trace() #check correctness
+                xTestOrdered = xTestOrdered.view(nTest*xTestOrdered.shape[1],1,-1)
+                yTestModel = yTest.view(nTest*xTestOrdered.shape[1],1,-1)
+                x1TestOrdered = x1TestOrdered.view(nTest*x1TestOrdered.shape[1],1,-1)
+                y1TestModel = y1Test.view(nTest*x1TestOrdered.shape[1],1,-1)
             
             with torch.no_grad():
                 # Process the samples
                 if 'GCRNN' in modelsGNN[key].name or 'gcrnn' in modelsGNN[key].name or \
                                                     'GCRnn' in modelsGNN[key].name:
                     h0t = torch.zeros(nTest,F1,nNodes)
-                    yHatTest = modelsGNN[key].archit(xTestOrdered,h0t)
+                    signalHatTest = modelsGNN[key].archit(xTestOrdered,h0t)
+                    # averaging output signal along t
+                    yHatTest = signalHatTest.reshape(nTest, F_len, F_t, 1, -1).mean(2)
+                    # averaging output signal for each cluster
+                    if len(assign_dicts) == 1:
+                        # if all the graphs share a same cluster structure
+                        assign_dict = assign_dicts[0]
+                        y1HatTest = []
+                        for k in range(len(assign_dict)):
+                            y1HatTest.append(signalHatTest[:,:,:,assign_dict[k]].mean(3))
+                        y1HatTest = torch.stack(y1HatTest, dim=len(y1HatTest[0].shape))
+
                 elif 'RNN' in modelsGNN[key].name or 'rnn' in modelsGNN[key].name or \
                                                     'Rnn' in modelsGNN[key].name:
+                    ipdb.set_trace() # TODO: dealing with output
                     h0t = torch.zeros(nTest,rnnStateFeat)
                     c0t = h0t
                     yHatTest = modelsGNN[key].archit(xTestOrdered,h0t,c0t)
                 else:
+                    ipdb.set_trace() # TODO: dealing with output
                     yHatTest = modelsGNN[key].archit(xTestOrdered)
                     yHatTest = yHatTest.unsqueeze(1)
 
                 # We compute the accuracy
-                thisAccLast = data.evaluate(yHatTest, yTestModel)
+                thisAccLast = (data.evaluate(yHatTest, yTestModel) \
+                            + data.evaluate(y1HatTest, y1TestModel)) / 2
 
             if doPrint:
                 print("%s: %4.4f" % (key, thisAccLast), flush = True)

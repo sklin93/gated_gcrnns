@@ -114,7 +114,7 @@ def batchTimeL1Loss(x, y):
     F = x.shape[dimensions-2]
     N = x.shape[dimensions-1]
     x = x.view(-1,N,F)
-    y = y.view(-1,N,F)
+    y = y.contiguous().view(-1,N,F)
     loss = torch.nn.L1Loss()
     return loss(x,y.double())
 
@@ -123,8 +123,9 @@ def batchTimeMSELoss(x, y):
     F = x.shape[dimensions-2]
     N = x.shape[dimensions-1]
     x = x.view(-1,N*F)
-    y = y.view(-1,N*F)
+    y = y.contiguous().view(-1,N*F)
     loss = torch.nn.MSELoss(reduction='none')
     loss_val = torch.sqrt(torch.sum(loss(x,y.double()),dim=0))
+    # import ipdb; ipdb.set_trace()
     loss_val = loss_val/torch.norm(y.double(),dim=0)
     return torch.mean(loss_val)
