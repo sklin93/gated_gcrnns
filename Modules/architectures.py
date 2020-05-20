@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 
 import Utils.graphML as gml
+import ipdb
 
 zeroTolerance = 1e-9 # Values below this number are considered zero.
 
@@ -1452,7 +1453,10 @@ class GatedGCRNNforRegression(nn.Module):
             poolingSize (list of int): size of the neighborhood to compute the
                 summary from at each layer if C(S) is a GNN with pooling
             maxN (int): maximum number of neighborhood exchanges if C(S) is an Aggregation GNN (default: None)
-
+            multiModalOutput (string): 'NA' (underlying signal output), 'avg' (averaging signal along s and t dimension),
+                'mlp' (with non linearities added)
+            F_t (int): F signal interval
+            assign_dicts (list of dict): sample graph cluster assignments
         Output:
             nn.Module with a full GRNN architecture, state + output neural networks,
             with the above specified characteristics.
@@ -1483,16 +1487,18 @@ class GatedGCRNNforRegression(nn.Module):
                  # Bias
                  bias,
                  # Gating
-                 time_gating = True,
-                 spatial_gating = None,
+                 time_gating=True,
+                 spatial_gating=None,
                  # Type of MLP, one for all nodes or one, local, per node
-                 mlpType = 'oneMlp',
+                 mlpType='oneMlp',
                  # Final nonlinearity, if any, to apply to y
-                 finalNonlinearity = None,			
+                 finalNonlinearity=None,			
                  # Output NN filtering if output NN is GNN
                  dimNodeSignals=None, nFilterTaps=None,
                  # Output NN pooling is output NN is GNN with pooling
-                 nSelectedNodes=None, poolingFunction=None, poolingSize=None, maxN = None):
+                 nSelectedNodes=None, poolingFunction=None, poolingSize=None, maxN = None,
+                 # Output multimodality data
+                 multiModalOutput='NA', F_t=0, assign_dicts=None):
         
         # Initialize parent:
         super().__init__()
@@ -1536,7 +1542,11 @@ class GatedGCRNNforRegression(nn.Module):
         # Nonlinearity to apply to the output, e.g. softmax for classification (default None)
         self.sigma3 = finalNonlinearity
         # Type of MLP
-        self.mlpType = mlpType        
+        self.mlpType = mlpType
+        # Type of output
+        self.multiModalOutput = multiModalOutput
+        self.F_t = F_t
+        self.assign_dicts = assign_dicts
         
         #\\ If output neural network is MLP:
         if dimNodeSignals is None and nFilterTaps is None:
@@ -1604,6 +1614,10 @@ class GatedGCRNNforRegression(nn.Module):
                 sel.append(self.sigma3())
             self.outputNN = nn.Sequential(*sel)
 
+            # Adding the output nonlinearity, if any
+            if self.multiModalOutput == 'mlp':
+                ipdb.set_trace() #TODO
+
     def forward(self, x, h0):
         # Now we compute the forward call
         batchSize = x.shape[0]
@@ -1633,7 +1647,28 @@ class GatedGCRNNforRegression(nn.Module):
         # recover original batch and sequence length dimensions
         y = flatY.view(batchSize,seqLength,-1)
         y = torch.unsqueeze(y,2)
-        return y
+        if self.multiModalOutput == 'NA':
+            return y
+        elif self.multiModalOutput == 'avg':
+            assert self.assign_dicts is not None
+            # F_len = ((seqLength + 1) // self.F_t) - 1 
+            F_len = seqLength // self.F_t
+            # averaging along t
+            yHatTrain = y.reshape(batchSize, F_len, self.F_t, 1, -1).mean(2)
+            # averaging output signal for each cluster
+            if len(self.assign_dicts) == 1:
+                # if all the graphs share a same cluster structure
+                assign_dict = self.assign_dicts[0]
+                y1HatTrain = []
+                for k in range(len(assign_dict)):
+                    y1HatTrain.append(y[:,:,:,assign_dict[k]].mean(3))
+                y1HatTrain = torch.stack(y1HatTrain, dim=len(y1HatTrain[0].shape))
+            else:
+                #TODO: different graphs (i.e. cluster assignments) for different samples
+                pass
+            return yHatTrain, y1HatTrain
+        elif self.multiModalOutput == 'mlp':
+            ipdb.set_trace() #TODO
 
     def to(self, device):
         # Because only the filter taps and the weights are registered as

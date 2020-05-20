@@ -288,20 +288,7 @@ def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen,
                                                     'GCRnn' in modelsDict[key].name:
                     # Obtain the output of the GCRNN
                     h0 = torch.zeros(batchSize[batch],stateFeat,xTrainOrdered.shape[3])
-                    signalHatTrain = modelsDict[key].archit(xTrainOrdered, h0)
-                    # averaging along t
-                    yHatTrain = signalHatTrain.reshape(batchSize[batch], F_len, F_t, 1, -1).mean(2)
-                    # averaging output signal for each cluster
-                    if len(assign_dicts) == 1:
-                        # if all the graphs share a same cluster structure
-                        assign_dict = assign_dicts[0]
-                        y1HatTrain = []
-                        for k in range(len(assign_dict)):
-                            y1HatTrain.append(signalHatTrain[:,:,:,assign_dict[k]].mean(3))
-                        y1HatTrain = torch.stack(y1HatTrain, dim=len(y1HatTrain[0].shape))
-                    else:
-                        #TODO: different graphs (i.e. cluster assignments) for different samples
-                        pass
+                    yHatTrain, y1HatTrain = modelsDict[key].archit(xTrainOrdered, h0)
                 
                 elif 'RNN' in modelsDict[key].name or 'rnn' in modelsDict[key].name or \
                                             'Rnn' in modelsDict[key].name:
@@ -444,20 +431,7 @@ def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen,
                         if 'GCRNN' in modelsDict[key].name or 'gcrnn' in modelsDict[key].name or \
                                                     'GCRnn' in modelsDict[key].name:
                             h0v = torch.zeros(nValid,stateFeat,xValidOrdered.shape[3])
-                            signalHatValid = modelsDict[key].archit(xValidOrdered,h0v)
-                            # averaging output signal along t
-                            yHatValid = signalHatValid.reshape(nValid, F_len, F_t, 1, -1).mean(2)
-                            # averaging output signal for each cluster
-                            if len(assign_dicts) == 1:
-                                # if all the graphs share a same cluster structure
-                                assign_dict = assign_dicts[0]
-                                y1HatValid = []
-                                for k in range(len(assign_dict)):
-                                    y1HatValid.append(signalHatValid[:,:,:,assign_dict[k]].mean(3))
-                                y1HatValid = torch.stack(y1HatValid, dim=len(y1HatValid[0].shape))
-                            else:
-                                #TODO: different graphs (i.e. cluster assignments) for different samples
-                                pass
+                            yHatValid, y1HatValid = modelsDict[key].archit(xValidOrdered,h0v)
 
                         elif 'RNN' in modelsDict[key].name or 'rnn' in modelsDict[key].name or \
                                                     'Rnn' in modelsDict[key].name:

@@ -1419,6 +1419,10 @@ class MultiModalityPrediction():
         nValid (int): number of validation samples
         nTest (int): number of testing samples
         horizon (int): length of the process
+        F_t (int): time resolution of generated F signal
+        pooltype (string): 'avg' or 'selectOne' or 'weighted'; the method for extracting F and E
+        FPoolDecay (float): decay factor between 0 and 1 for weight pool type generating F
+        EPoolDecay (float): decay factor between 0 and 1 for weight pool type generating E
         sigmaSpatial (float): spatial variance
         sigmaTemporal (float): temporal variance
         rhoSpatial (float): spatial correlation
@@ -1464,7 +1468,8 @@ class MultiModalityPrediction():
 
     """
 
-    def __init__(self, G, nTrain, nValid, nTest, horizon, F_t = 5,
+    def __init__(self, G, nTrain, nValid, nTest, horizon, F_t = 5, 
+                pooltype='weighted', FPoolDecay=0.8, EPoolDecay=0.8,
                 sigmaSpatial = 1, sigmaTemporal = 0, rhoSpatial = 0, 
                 rhoTemporal = 0, dataType = np.float64, device = 'cpu'):
         # store attributes
@@ -1509,8 +1514,8 @@ class MultiModalityPrediction():
         x = np.stack(x, axis=-1) # (nTotal, G.N, horizon)
         
         # synthetic fMRI (coarse temporal) and EEG (coarse spacial)
-        F = self._gen_F(x, F_t)
-        E = self._gen_E(x, G.assign_dict)
+        F = self._gen_F(x, F_t, pooltype, FPoolDecay)
+        E = self._gen_E(x, G, pooltype, EPoolDecay)
         # x = x.transpose(0, 2, 1).reshape(x.shape[0], -1) # x (the underlying signal) has shape: (nTotal, G.N * horizon)
 
         # signals and labels for F
@@ -1541,19 +1546,70 @@ class MultiModalityPrediction():
         self.astype(self.dataType)
         self.to(self.device)
 
-    def _gen_F(self, x, F_t):
-        # synthetic F (select every F_t time step)
-        F = x[:, :, np.arange(0, x.shape[-1], F_t)]
-        return F.transpose(0, 2, 1).reshape(len(F), -1)
-        # return x[:, np.arange(0, self.horizon, F_t)]
+    def _gen_F(self, x, F_t, pooltype, alpha=0.8):
+        # synthetic F (1 every F_t time step)
+        if pooltype == 'selectOne':
+            F = x[:, :, np.arange(0, x.shape[-1], F_t)] #(L, N, T//F_t)
+            return F.transpose(0, 2, 1).reshape(len(F), -1)
+        elif pooltype == 'avg':
+            F = x.reshape(x.shape[0], x.shape[1], -1, F_t).mean(-1) #(L, N, T//F_t)
+            return F.transpose(0, 2, 1).reshape(len(F), -1)
+        elif pooltype == 'weighted':
+            alpha = 1
+            weight = []
+            for i in range(F_t):
+                weight.append(alpha ** abs(i - (F_t//2)))
+            weight = np.asarray(weight) / sum(weight)
+            F = x.reshape(x.shape[0], x.shape[1], -1, F_t)
+            F = (F * weight[None, None, None, :]).sum(-1) #(L, N, T//F_t)
+            return F.transpose(0, 2, 1).reshape(len(F), -1)
+        else:
+            print('generation type not supported.')
+            return
         
-    def _gen_E(self, x, assign_dict):
-        # synthetic EEG (average signal within 4 clusters)
-        E = []
-        for k, v in assign_dict.items():
-            E.append(np.average(x[:, np.asarray(v), :], axis=1))
-        E = np.stack(E, axis=-1) # (nTotal, horizon, nCluster)
-        return E.reshape(len(E), -1)
+    def _gen_E(self, x, G, pooltype, beta=0.8):
+        # synthetic EEG (1 signal for each clusters)
+        assign_dict = G.assign_dict
+        if pooltype == 'selectOne':
+            E = []
+            for k, v in assign_dict.items():
+                E.append(x[:, v[len(v)//2], :])
+            E = np.stack(E, axis=-1) # (L, T, K)
+            return E.reshape(len(E), -1)
+        if pooltype == 'avg':
+            E = []
+            for k, v in assign_dict.items():
+                E.append(np.average(x[:, v, :], axis=1))
+            E = np.stack(E, axis=-1) # (L, T, K)
+            return E.reshape(len(E), -1)
+        elif pooltype == 'weighted':
+            E = []
+            for k, v in assign_dict.items():
+                # chose one node that contribute the most
+                chosen = len(v)//2
+                cluster_W = G.W[v][:,v]
+                #assumption here: symmetric graph (TODO: Asymmetric ones)
+                weight = np.zeros(len(v))
+                remained = np.ones(len(v), dtype=int)
+
+                weight[chosen] = 1
+                remained[chosen] = 0
+                nei_idx = cluster_W[chosen].astype(bool)
+                k = 1
+                # contribution decays by hop
+                while sum(remained) != 0:
+                    # k-hop neighbor of the chosen node
+                    weight[nei_idx] = beta**k
+                    remained = remained - nei_idx
+                    nei_idx = (cluster_W[nei_idx].sum(0).astype(bool) \
+                                * remained).astype(bool)
+                    k += 1
+                E.append((x[:, v, :] * weight[None, :, None]).sum(1))
+            E = np.stack(E, axis=-1) # (L, T, K)
+            return E.reshape(len(E), -1)
+        else:
+            print('generation type not supported.')
+            return
 
     def getSamples(self, samplesType, *args):
         # type: train, valid, test

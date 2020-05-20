@@ -372,6 +372,8 @@ if doTimeGCRNN_GNN:
     hParamsTimeGCRNN_GNN['nSelectedNodes'] = [nNodes]
     hParamsTimeGCRNN_GNN['poolingFunction'] = gml.NoPool
     hParamsTimeGCRNN_GNN['poolingSize=None'] = [1]
+    hParamsTimeGCRNN_GNN['multiModalOutput'] ='avg'
+    hParamsTimeGCRNN_GNN['F_t'] = F_t
 
     #\\\ Save Values:
     writeVarValues(varsFile, hParamsTimeGCRNN_GNN)
@@ -640,7 +642,7 @@ for graph in range(nGraphRealizations):
 
         #   Now that we have the list of nodes we are using as sources, then we
         #   can go ahead and generate the datasets.
-        data = Utils.dataTools.MultiModalityPrediction(G, nTrain, nValid, nTest, num_timestep, F_t=F_t, 
+        data = Utils.dataTools.MultiModalityPrediction(G, nTrain, nValid, nTest, num_timestep, F_t=F_t,
                                                     sigmaSpatial=sigmaSpatial, sigmaTemporal=sigmaTemporal,
                                                     rhoSpatial=rhoSpatial, rhoTemporal=rhoTemporal)
         # ipdb.set_trace()
@@ -1062,7 +1064,9 @@ for graph in range(nGraphRealizations):
                                              hParamsTimeGCRNN_GNN['nFilterTaps'],
                                              hParamsTimeGCRNN_GNN['nSelectedNodes'],
                                              hParamsTimeGCRNN_GNN['poolingFunction'],
-                                             hParamsTimeGCRNN_GNN['poolingSize=None'])
+                                             hParamsTimeGCRNN_GNN['poolingSize=None'], None,
+                                             hParamsTimeGCRNN_GNN['multiModalOutput'], 
+                                             hParamsTimeGCRNN_GNN['F_t'], [G.assign_dict])
             # This is necessary to move all the learnable parameters to be
             # stored in the device (mostly, if it's a GPU)
             thisArchit.to(device)
@@ -1633,17 +1637,7 @@ for graph in range(nGraphRealizations):
                 if 'GCRNN' in modelsGNN[key].name or 'gcrnn' in modelsGNN[key].name or \
                                                     'GCRnn' in modelsGNN[key].name:
                     h0t = torch.zeros(nTest,F1,nNodes)
-                    signalHatTest = modelsGNN[key].archit(xTestOrdered,h0t)
-                    # averaging output signal along t
-                    yHatTest = signalHatTest.reshape(nTest, F_len, F_t, 1, -1).mean(2)
-                    # averaging output signal for each cluster
-                    if len(assign_dicts) == 1:
-                        # if all the graphs share a same cluster structure
-                        assign_dict = assign_dicts[0]
-                        y1HatTest = []
-                        for k in range(len(assign_dict)):
-                            y1HatTest.append(signalHatTest[:,:,:,assign_dict[k]].mean(3))
-                        y1HatTest = torch.stack(y1HatTest, dim=len(y1HatTest[0].shape))
+                    yHatTest, y1HatTest = modelsGNN[key].archit(xTestOrdered,h0t)
                     
                 elif 'RNN' in modelsGNN[key].name or 'rnn' in modelsGNN[key].name or \
                                                     'Rnn' in modelsGNN[key].name:
@@ -1712,17 +1706,7 @@ for graph in range(nGraphRealizations):
                 if 'GCRNN' in modelsGNN[key].name or 'gcrnn' in modelsGNN[key].name or \
                                                     'GCRnn' in modelsGNN[key].name:
                     h0t = torch.zeros(nTest,F1,nNodes)
-                    signalHatTest = modelsGNN[key].archit(xTestOrdered,h0t)
-                    # averaging output signal along t
-                    yHatTest = signalHatTest.reshape(nTest, F_len, F_t, 1, -1).mean(2)
-                    # averaging output signal for each cluster
-                    if len(assign_dicts) == 1:
-                        # if all the graphs share a same cluster structure
-                        assign_dict = assign_dicts[0]
-                        y1HatTest = []
-                        for k in range(len(assign_dict)):
-                            y1HatTest.append(signalHatTest[:,:,:,assign_dict[k]].mean(3))
-                        y1HatTest = torch.stack(y1HatTest, dim=len(y1HatTest[0].shape))
+                    yHatTest, y1HatTest = modelsGNN[key].archit(xTestOrdered,h0t)
 
                 elif 'RNN' in modelsGNN[key].name or 'rnn' in modelsGNN[key].name or \
                                                     'Rnn' in modelsGNN[key].name:
@@ -1997,96 +1981,96 @@ if doFigs and doSaveVars:
         varsMatlab['stdDevEvalValid' + thisModel] = stdDevEvalValid[thisModel]
     savemat(os.path.join(saveDirFigs, 'figVars.mat'), varsMatlab)
 
-    ########
-    # PLOT #
-    ########
+    # ########
+    # # PLOT #
+    # ########
 
-    # Compute the x-axis
-    xTrain = np.arange(0, nEpochs * nBatches, xAxisMultiplierTrain)
-    xValid = np.arange(0, nEpochs * nBatches, \
-                          validationInterval*xAxisMultiplierValid)
+    # # Compute the x-axis
+    # xTrain = np.arange(0, nEpochs * nBatches, xAxisMultiplierTrain)
+    # xValid = np.arange(0, nEpochs * nBatches, \
+    #                       validationInterval*xAxisMultiplierValid)
 
-    # If we do not want to plot all the elements (to avoid overcrowded plots)
-    # we need to recompute the x axis and take those elements corresponding
-    # to the training steps we want to plot
-    if xAxisMultiplierTrain > 1:
-        # Actual selected samples
-        selectSamplesTrain = xTrain
-        # Go and fetch tem
-        for thisModel in modelList:
-            meanLossTrain[thisModel] = meanLossTrain[thisModel]\
-                                                    [selectSamplesTrain]
-            stdDevLossTrain[thisModel] = stdDevLossTrain[thisModel]\
-                                                        [selectSamplesTrain]
-            meanEvalTrain[thisModel] = meanEvalTrain[thisModel]\
-                                                    [selectSamplesTrain]
-            stdDevEvalTrain[thisModel] = stdDevEvalTrain[thisModel]\
-                                                        [selectSamplesTrain]
-    # And same for the validation, if necessary.
-    if xAxisMultiplierValid > 1:
-        selectSamplesValid = np.arange(0, len(meanLossValid[thisModel]), \
-                                       xAxisMultiplierValid)
-        for thisModel in modelList:
-            meanLossValid[thisModel] = meanLossValid[thisModel]\
-                                                    [selectSamplesValid]
-            stdDevLossValid[thisModel] = stdDevLossValid[thisModel]\
-                                                        [selectSamplesValid]
-            meanEvalValid[thisModel] = meanEvalValid[thisModel]\
-                                                    [selectSamplesValid]
-            stdDevEvalValid[thisModel] = stdDevEvalValid[thisModel]\
-                                                        [selectSamplesValid]
+    # # If we do not want to plot all the elements (to avoid overcrowded plots)
+    # # we need to recompute the x axis and take those elements corresponding
+    # # to the training steps we want to plot
+    # if xAxisMultiplierTrain > 1:
+    #     # Actual selected samples
+    #     selectSamplesTrain = xTrain
+    #     # Go and fetch tem
+    #     for thisModel in modelList:
+    #         meanLossTrain[thisModel] = meanLossTrain[thisModel]\
+    #                                                 [selectSamplesTrain]
+    #         stdDevLossTrain[thisModel] = stdDevLossTrain[thisModel]\
+    #                                                     [selectSamplesTrain]
+    #         meanEvalTrain[thisModel] = meanEvalTrain[thisModel]\
+    #                                                 [selectSamplesTrain]
+    #         stdDevEvalTrain[thisModel] = stdDevEvalTrain[thisModel]\
+    #                                                     [selectSamplesTrain]
+    # # And same for the validation, if necessary.
+    # if xAxisMultiplierValid > 1:
+    #     selectSamplesValid = np.arange(0, len(meanLossValid[thisModel]), \
+    #                                    xAxisMultiplierValid)
+    #     for thisModel in modelList:
+    #         meanLossValid[thisModel] = meanLossValid[thisModel]\
+    #                                                 [selectSamplesValid]
+    #         stdDevLossValid[thisModel] = stdDevLossValid[thisModel]\
+    #                                                     [selectSamplesValid]
+    #         meanEvalValid[thisModel] = meanEvalValid[thisModel]\
+    #                                                 [selectSamplesValid]
+    #         stdDevEvalValid[thisModel] = stdDevEvalValid[thisModel]\
+    #                                                     [selectSamplesValid]
 
-    #\\\ LOSS (Training and validation) for EACH MODEL
-    for key in meanLossTrain.keys():
-        lossFig = plt.figure(figsize=(1.61*5, 1*5))
-        plt.errorbar(xTrain, meanLossTrain[key], yerr = stdDevLossTrain[key],
-                     color = '#01256E', linewidth = 2,
-                     marker = 'o', markersize = 3)
-        plt.errorbar(xValid, meanLossValid[key], yerr = stdDevLossValid[key],
-                     color = '#95001A', linewidth = 2,
-                     marker = 'o', markersize = 3)
-        plt.ylabel(r'Loss')
-        plt.xlabel(r'Training steps')
-        plt.legend([r'Training', r'Validation'])
-        plt.title(r'%s' % key)
-        lossFig.savefig(os.path.join(saveDirFigs,'loss%s.pdf' % key),
-                        bbox_inches = 'tight')
+    # #\\\ LOSS (Training and validation) for EACH MODEL
+    # for key in meanLossTrain.keys():
+    #     lossFig = plt.figure(figsize=(1.61*5, 1*5))
+    #     plt.errorbar(xTrain, meanLossTrain[key], yerr = stdDevLossTrain[key],
+    #                  color = '#01256E', linewidth = 2,
+    #                  marker = 'o', markersize = 3)
+    #     plt.errorbar(xValid, meanLossValid[key], yerr = stdDevLossValid[key],
+    #                  color = '#95001A', linewidth = 2,
+    #                  marker = 'o', markersize = 3)
+    #     plt.ylabel(r'Loss')
+    #     plt.xlabel(r'Training steps')
+    #     plt.legend([r'Training', r'Validation'])
+    #     plt.title(r'%s' % key)
+    #     lossFig.savefig(os.path.join(saveDirFigs,'loss%s.pdf' % key),
+    #                     bbox_inches = 'tight')
 
-    #\\\ ACCURACY (Training and validation) for EACH MODEL
-    for key in meanEvalTrain.keys():
-        accFig = plt.figure(figsize=(1.61*5, 1*5))
-        plt.errorbar(xTrain, meanEvalTrain[key], yerr = stdDevEvalTrain[key],
-                     color = '#01256E', linewidth = 2,
-                     marker = 'o', markersize = 3)
-        plt.errorbar(xValid, meanEvalValid[key], yerr = stdDevEvalValid[key],
-                     color = '#95001A', linewidth = 2,
-                     marker = 'o', markersize = 3)
-        plt.ylabel(r'Accuracy')
-        plt.xlabel(r'Training steps')
-        plt.legend([r'Training', r'Validation'])
-        plt.title(r'%s' % key)
-        accFig.savefig(os.path.join(saveDirFigs,'eval%s.pdf' % key),
-                        bbox_inches = 'tight')
+    # #\\\ ACCURACY (Training and validation) for EACH MODEL
+    # for key in meanEvalTrain.keys():
+    #     accFig = plt.figure(figsize=(1.61*5, 1*5))
+    #     plt.errorbar(xTrain, meanEvalTrain[key], yerr = stdDevEvalTrain[key],
+    #                  color = '#01256E', linewidth = 2,
+    #                  marker = 'o', markersize = 3)
+    #     plt.errorbar(xValid, meanEvalValid[key], yerr = stdDevEvalValid[key],
+    #                  color = '#95001A', linewidth = 2,
+    #                  marker = 'o', markersize = 3)
+    #     plt.ylabel(r'Accuracy')
+    #     plt.xlabel(r'Training steps')
+    #     plt.legend([r'Training', r'Validation'])
+    #     plt.title(r'%s' % key)
+    #     accFig.savefig(os.path.join(saveDirFigs,'eval%s.pdf' % key),
+    #                     bbox_inches = 'tight')
 
-    # LOSS (training) for ALL MODELS
-    allLossTrain = plt.figure(figsize=(1.61*5, 1*5))
-    for key in meanLossTrain.keys():
-        plt.errorbar(xTrain, meanLossTrain[key], yerr = stdDevLossTrain[key],
-                     linewidth = 2, marker = 'o', markersize = 3)
-    plt.ylabel(r'Loss')
-    plt.xlabel(r'Training steps')
-    plt.legend(list(meanLossTrain.keys()))
-    allLossTrain.savefig(os.path.join(saveDirFigs,'allLossTrain.pdf'),
-                    bbox_inches = 'tight')
+    # # LOSS (training) for ALL MODELS
+    # allLossTrain = plt.figure(figsize=(1.61*5, 1*5))
+    # for key in meanLossTrain.keys():
+    #     plt.errorbar(xTrain, meanLossTrain[key], yerr = stdDevLossTrain[key],
+    #                  linewidth = 2, marker = 'o', markersize = 3)
+    # plt.ylabel(r'Loss')
+    # plt.xlabel(r'Training steps')
+    # plt.legend(list(meanLossTrain.keys()))
+    # allLossTrain.savefig(os.path.join(saveDirFigs,'allLossTrain.pdf'),
+    #                 bbox_inches = 'tight')
 
-    # ACCURACY (validation) for ALL MODELS
-    allEvalValid = plt.figure(figsize=(1.61*5, 1*5))
-    for key in meanEvalValid.keys():
-        plt.errorbar(xValid, meanEvalValid[key], yerr = stdDevEvalValid[key],
-                     linewidth = 2, marker = 'o', markersize = 3)
-    plt.ylabel(r'Accuracy')
-    plt.xlabel(r'Training steps')
-    plt.legend(list(meanEvalValid.keys()))
-    allEvalValid.savefig(os.path.join(saveDirFigs,'allEvalValid.pdf'),
-                    bbox_inches = 'tight')
-    
+    # # ACCURACY (validation) for ALL MODELS
+    # allEvalValid = plt.figure(figsize=(1.61*5, 1*5))
+    # for key in meanEvalValid.keys():
+    #     plt.errorbar(xValid, meanEvalValid[key], yerr = stdDevEvalValid[key],
+    #                  linewidth = 2, marker = 'o', markersize = 3)
+    # plt.ylabel(r'Accuracy')
+    # plt.xlabel(r'Training steps')
+    # plt.legend(list(meanEvalValid.keys()))
+    # allEvalValid.savefig(os.path.join(saveDirFigs,'allEvalValid.pdf'),
+    #                 bbox_inches = 'tight')
+    # 
