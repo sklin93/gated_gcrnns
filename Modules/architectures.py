@@ -1614,9 +1614,28 @@ class GatedGCRNNforRegression(nn.Module):
                 sel.append(self.sigma3())
             self.outputNN = nn.Sequential(*sel)
 
-            # Adding the output nonlinearity, if any
-            if self.multiModalOutput == 'mlp':
-                ipdb.set_trace() #TODO
+        # Adding the output nonlinearity, if any
+        if self.multiModalOutput == 'mlp':
+            assert self.assign_dicts is not None
+            # number of FC layers for extracting F and E signals from the complete signal
+            FELayers = 2
+            # hidden dimension (for more than one fc layers)
+            dim_F_in = F_t
+            dim_E_in = GSO.shape[-1]
+            dim_F_hidden = dim_F_in // 2
+            dim_E_hidden = dim_E_in // 2
+
+            F_out = []
+            E_out = []
+            for i in range(FELayers - 1):
+                F_out.append(nn.Linear(dim_F_in, dim_F_hidden, bias = self.bias))
+                E_out.append(nn.Linear(dim_E_in, dim_E_hidden, bias = self.bias))
+            # final out layer, need output the correct final dimension
+            F_out.append(nn.Linear(dim_F_hidden, 1, bias = self.bias))
+            E_out.append(nn.Linear(dim_E_hidden, len(assign_dicts[0]), bias = self.bias))
+
+            self.mlp_f = nn.Sequential(*F_out)
+            self.mlp_e = nn.Sequential(*E_out)
 
     def forward(self, x, h0):
         # Now we compute the forward call
@@ -1648,7 +1667,7 @@ class GatedGCRNNforRegression(nn.Module):
         y = flatY.view(batchSize,seqLength,-1)
         y = torch.unsqueeze(y,2)
         if self.multiModalOutput == 'NA':
-            return y
+            return y # [50, 195, 1, 80] (batchsize, F_len*F_t, 1, num_nodes)
         elif self.multiModalOutput == 'avg':
             assert self.assign_dicts is not None
             # F_len = ((seqLength + 1) // self.F_t) - 1 
@@ -1666,9 +1685,19 @@ class GatedGCRNNforRegression(nn.Module):
             else:
                 #TODO: different graphs (i.e. cluster assignments) for different samples
                 pass
-            return yHatTrain, y1HatTrain
+            return yHatTrain, y1HatTrain #[50, 39, 1, 80], [50, 195, 1, 5]
+
         elif self.multiModalOutput == 'mlp':
-            ipdb.set_trace() #TODO
+            F_len = seqLength // self.F_t
+            # Extract F
+            y_F_in = y.squeeze().transpose(1,2)
+            y_F_in = y_F_in.reshape(batchSize, -1, F_len, self.F_t)
+            yHatTrain = self.mlp_f(y_F_in.reshape(-1, self.F_t)).squeeze().reshape(batchSize, -1, F_len)
+            yHatTrain = yHatTrain.transpose(1,2)[:,:,None,:]
+            # Extract E
+            y1HatTrain = self.mlp_e(y.squeeze().reshape(-1, y.shape[-1]))
+            y1HatTrain = y1HatTrain.reshape(batchSize, -1, 1, y1HatTrain.shape[-1])
+            return yHatTrain, y1HatTrain
 
     def to(self, device):
         # Because only the filter taps and the weights are registered as

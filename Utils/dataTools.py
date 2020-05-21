@@ -1513,7 +1513,7 @@ class MultiModalityPrediction():
 
         x = np.stack(x, axis=-1) # (nTotal, G.N, horizon)
         
-        # synthetic fMRI (coarse temporal) and EEG (coarse spacial)
+        # synthetic F (coarse temporal) and E (coarse spacial)
         F = self._gen_F(x, F_t, pooltype, FPoolDecay)
         E = self._gen_E(x, G, pooltype, EPoolDecay)
         # x = x.transpose(0, 2, 1).reshape(x.shape[0], -1) # x (the underlying signal) has shape: (nTotal, G.N * horizon)
@@ -1568,7 +1568,7 @@ class MultiModalityPrediction():
             return
         
     def _gen_E(self, x, G, pooltype, beta=0.8):
-        # synthetic EEG (1 signal for each clusters)
+        # synthetic E (1 signal for each clusters)
         assign_dict = G.assign_dict
         if pooltype == 'selectOne':
             E = []

@@ -372,7 +372,7 @@ if doTimeGCRNN_GNN:
     hParamsTimeGCRNN_GNN['nSelectedNodes'] = [nNodes]
     hParamsTimeGCRNN_GNN['poolingFunction'] = gml.NoPool
     hParamsTimeGCRNN_GNN['poolingSize=None'] = [1]
-    hParamsTimeGCRNN_GNN['multiModalOutput'] ='avg'
+    hParamsTimeGCRNN_GNN['multiModalOutput'] ='mlp' #'avg' 'NA'
     hParamsTimeGCRNN_GNN['F_t'] = F_t
 
     #\\\ Save Values:
@@ -642,10 +642,10 @@ for graph in range(nGraphRealizations):
 
         #   Now that we have the list of nodes we are using as sources, then we
         #   can go ahead and generate the datasets.
-        data = Utils.dataTools.MultiModalityPrediction(G, nTrain, nValid, nTest, num_timestep, F_t=F_t,
+        data = Utils.dataTools.MultiModalityPrediction(G, nTrain, nValid, nTest, num_timestep, 
+                                                    F_t=F_t, pooltype='selectOne', #'avg', 'selectOne', 'weighted'
                                                     sigmaSpatial=sigmaSpatial, sigmaTemporal=sigmaTemporal,
                                                     rhoSpatial=rhoSpatial, rhoTemporal=rhoTemporal)
-        # ipdb.set_trace()
         data.astype(torch.float64)
 
         data.to(device)
