@@ -2342,11 +2342,11 @@ class GGCRNNCell(nn.Module):
         F_in = X.shape[2]
 
         # Defaults when there is no time gating
-        in_gate = torch.ones([B, 1]);
-        forget_gate = torch.ones([B, 1]);
+        in_gate = torch.ones([B, 1]).to(X.device)
+        forget_gate = torch.ones([B, 1]).to(X.device)
 
         # Compute the GCRNN cell output
-        H = torch.empty(0)  # state sequence
+        H = torch.empty(0).to(X.device)  # state sequence
         h = h0  # current state
         for i in range(T):
             # Slice input at time t

@@ -8,6 +8,11 @@ import ipdb
 
 zeroTolerance = 1e-9 # Values below this number are considered zero.
 
+if torch.cuda.is_available():
+    device = 'cuda'
+else:
+    device = 'cpu'
+
 class SelectionGNN(nn.Module):
     """
     SelectionGNN: implement the selection GNN architecture
@@ -70,7 +75,9 @@ class SelectionGNN(nn.Module):
                  # MLP in the end
                  dimLayersMLP,
                  # Structure
-                 GSO):
+                 GSO,
+                 # device
+                 device=device):
         # Initialize parent:
         super().__init__()
         # dimNodeSignals should be a list and of size 1 more than nFilter taps.
@@ -99,7 +106,7 @@ class SelectionGNN(nn.Module):
         # each layer.
         self.bias = bias # Boolean
         # Store the rest of the variables
-        self.S = torch.tensor(GSO)
+        self.S = torch.tensor(GSO).to(device)
         self.sigma = nonlinearity
         self.rho = poolingFunction
         self.alpha = poolingSize
@@ -170,8 +177,8 @@ class SelectionGNN(nn.Module):
         # GSOs. So we need to move them ourselves.
         # Call the parent .to() method (to move the registered parameters)
         super().to(device)
-        # Move the GSO
-        self.S = self.S.to(device)
+        # # Move the GSO
+        # self.S = self.S.to(device)
         # And all the other variables derived from it.
         for l in range(self.L):
             self.GFL[3*l].addGSO(self.S)
@@ -242,7 +249,9 @@ class SpectralGNN(nn.Module):
                  # MLP in the end
                  dimLayersMLP,
                  # Structure
-                 GSO):
+                 GSO,
+                 # device
+                 device=device):
         # Initialize parent:
         super().__init__()
         # dimNodeSignals should be a list and of size 1 more than nFilter taps.
@@ -270,7 +279,7 @@ class SpectralGNN(nn.Module):
         # layer: this above is the list containing how many nodes are between
         # each layer.
         self.bias = bias # Boolean
-        self.S = torch.tensor(GSO)
+        self.S = torch.tensor(GSO).to(device)
         self.sigma = nonlinearity
         self.rho = poolingFunction
         self.alpha = poolingSize
@@ -341,8 +350,8 @@ class SpectralGNN(nn.Module):
         # GSOs. So we need to move them ourselves.
         # Call the parent .to() method (to move the registered parameters)
         super().to(device)
-        # Move the GSO
-        self.S = self.S.to(device)
+        # # Move the GSO
+        # self.S = self.S.to(device)
         # And all the other variables derived from it.
         for l in range(self.L):
             self.SGFL[3*l].addGSO(self.S)
@@ -416,7 +425,9 @@ class NodeVariantGNN(nn.Module):
                  # MLP in the end
                  dimLayersMLP,
                  # Structure
-                 GSO):
+                 GSO,
+                 # device
+                 device=device):
         # Initialize parent:
         super().__init__()
         # dimNodeSignals should be a list and of size 1 more than the number of
@@ -449,7 +460,7 @@ class NodeVariantGNN(nn.Module):
         # layer: this above is the list containing how many nodes are between
         # each layer.
         self.bias = bias # Boolean
-        self.S = torch.tensor(GSO)
+        self.S = torch.tensor(GSO).to(device)
         self.sigma = nonlinearity
         self.rho = poolingFunction
         self.alpha = poolingSize
@@ -521,8 +532,8 @@ class NodeVariantGNN(nn.Module):
         # GSOs. So we need to move them ourselves.
         # Call the parent .to() method (to move the registered parameters)
         super().to(device)
-        # Move the GSO
-        self.S = self.S.to(device)
+        # # Move the GSO
+        # self.S = self.S.to(device)
         # And all the other variables derived from it.
         for l in range(self.L):
             self.NVGFL[3*l].addGSO(self.S)
@@ -594,7 +605,9 @@ class EdgeVariantGNN(nn.Module):
                  # MLP in the end
                  dimLayersMLP,
                  # Structure
-                 GSO):
+                 GSO,
+                 # device
+                 device=device):
         # Initialize parent:
         super().__init__()
         # dimNodeSignals should be a list and of size 1 more than the number of
@@ -628,7 +641,7 @@ class EdgeVariantGNN(nn.Module):
         # layer: this above is the list containing how many nodes are between
         # each layer.
         self.bias = bias # Boolean
-        self.S = torch.tensor(GSO)
+        self.S = torch.tensor(GSO).to(device)
         self.sigma = nonlinearity
         self.rho = poolingFunction
         self.alpha = poolingSize
@@ -700,8 +713,8 @@ class EdgeVariantGNN(nn.Module):
         # GSOs. So we need to move them ourselves.
         # Call the parent .to() method (to move the registered parameters)
         super().to(device)
-        # Move the GSO
-        self.S = self.S.to(device)
+        # # Move the GSO
+        # self.S = self.S.to(device)
         # And all the other variables derived from it.
         for l in range(self.L):
             self.EVGFL[3*l].addGSO(self.S)
@@ -759,7 +772,9 @@ class AggregationGNN(nn.Module):
                  # MLP in the end
                  dimLayersMLP,
                  # Structure
-                 GSO, maxN = None):
+                 GSO, maxN = None,
+                 # device
+                 device=device):
         super().__init__()
         # dimNodeSignals should be a list and of size 1 more than nFilter taps.
         assert len(dimFeatures) == len(nFilterTaps) + 1
@@ -779,7 +794,7 @@ class AggregationGNN(nn.Module):
         self.K = nFilterTaps # Filter taps
         self.E = GSO.shape[0]
         self.bias = bias # Boolean
-        self.S = torch.tensor(GSO)
+        self.S = torch.tensor(GSO).to(device)
         self.sigma = nonlinearity
         self.rho = poolingFunction
         self.alpha = poolingSize # This acts as both the kernel_size and the
@@ -884,7 +899,7 @@ class AggregationGNN(nn.Module):
         # Call the parent .to() method (to move the registered parameters)
         super().to(device)
         # Move to device the GSO and its related variables.
-        self.S = self.S.to(device)
+        # self.S = self.S.to(device)
         self.SN = self.SN.to(device)
         
 class MultiNodeAggregationGNN(nn.Module):
@@ -996,7 +1011,9 @@ class MultiNodeAggregationGNN(nn.Module):
                  #  MLP in the end
                  dimLayersMLP,
                  # Graph Structure
-                 GSO):
+                 GSO,
+                 # device
+                 device=device):
         # Initialize parent class
         super().__init__()
         # Check that we have an adequate GSO
@@ -1044,7 +1061,7 @@ class MultiNodeAggregationGNN(nn.Module):
         self.rho = poolingFunction # To use on every aggregation GNN
         self.alpha = poolingSize # Pooling size on each aggregation GNN
         self.dimLayersMLP = dimLayersMLP # MLP for each inner aggregation GNN
-        self.S = torch.tensor(GSO)
+        self.S = torch.tensor(GSO).to(device)
         # Now that there are several things to do next:
         # - The AggregationGNN module always selects the first node, so if we
         #   want to select the first R, then we have to reorder it ourselves
@@ -1259,7 +1276,9 @@ class GraphAttentionNetwork(nn.Module):
                  # MLP in the end
                  dimLayersMLP, bias,
                  # Structure
-                 GSO):
+                 GSO,
+                 # device
+                 device=device):
         # Initialize parent:
         super().__init__()
         # dimNodeSignals should be a list and of size 1 more than nFilter taps.
@@ -1286,7 +1305,7 @@ class GraphAttentionNetwork(nn.Module):
         # See that we adding N_{0} = N as the number of nodes input the first
         # layer: this above is the list containing how many nodes are between
         # each layer.
-        self.S = torch.tensor(GSO)
+        self.S = torch.tensor(GSO).to(device)
         self.sigma = nonlinearity # This has to be a nn.functional instead of
             # just a nn
         self.rho = poolingFunction
@@ -1396,8 +1415,8 @@ class GraphAttentionNetwork(nn.Module):
         # GSOs. So we need to move them ourselves.
         # Call the parent .to() method (to move the registered parameters)
         super().to(device)
-        # Move the GSO
-        self.S = self.S.to(device)
+        # # Move the GSO
+        # self.S = self.S.to(device)
         # And all the other variables derived from it.
         for l in range(self.L):
             self.GAT[2*l].addGSO(self.S)
@@ -1498,7 +1517,9 @@ class GatedGCRNNforRegression(nn.Module):
                  # Output NN pooling is output NN is GNN with pooling
                  nSelectedNodes=None, poolingFunction=None, poolingSize=None, maxN = None,
                  # Output multimodality data
-                 multiModalOutput='NA', F_t=0, assign_dicts=None):
+                 multiModalOutput='NA', F_t=0, assign_dicts=None,
+                 # device
+                 device=device):
         
         # Initialize parent:
         super().__init__()
@@ -1521,7 +1542,7 @@ class GatedGCRNNforRegression(nn.Module):
         self.bias = bias # Boolean
         self.time_gating = time_gating # Boolean
         self.spatial_gating = spatial_gating # None, "node" or "edge"
-        self.S = torch.tensor(GSO)
+        self.S = torch.tensor(GSO).to(device)
         self.sigma1 = stateNonlinearity	 
         # Declare State GCRNN				
         self.stateGCRNN = gml.GGCRNNCell(self.F_i, self.F_h, self.K_i,
@@ -1705,8 +1726,8 @@ class GatedGCRNNforRegression(nn.Module):
         # GSOs. So we need to move them ourselves.
         # Call the parent .to() method (to move the registered parameters)
         super().to(device)
-        # Move the GSO
-        self.S = self.S.to(device)
+        # # Move the GSO
+        # self.S = self.S.to(device)
 
 class GatedGCRNNforClassification(nn.Module):
     """
@@ -1796,7 +1817,9 @@ class GatedGCRNNforClassification(nn.Module):
                  # Output NN filtering if output NN is GNN
                  dimNodeSignals=None, nFilterTaps=None,
                  # Output NN pooling is output NN is GNN with pooling
-                 nSelectedNodes=None, poolingFunction=None, poolingSize=None, maxN = None):
+                 nSelectedNodes=None, poolingFunction=None, poolingSize=None, maxN = None,
+                 # device
+                 device=device):
         
         # Initialize parent:
         super().__init__()
@@ -1819,7 +1842,7 @@ class GatedGCRNNforClassification(nn.Module):
         self.bias = bias # Boolean
         self.time_gating = time_gating # Boolean
         self.spatial_gating = spatial_gating # None, "node" or "edge"
-        self.S = torch.tensor(GSO)
+        self.S = torch.tensor(GSO).to(device)
         self.sigma1 = stateNonlinearity	 
         # Declare State GCRNN				
         self.stateGCRNN = gml.GGCRNNCell(self.F_i, self.F_h, self.K_i,
@@ -1919,8 +1942,8 @@ class GatedGCRNNforClassification(nn.Module):
         # GSOs. So we need to move them ourselves.
         # Call the parent .to() method (to move the registered parameters)
         super().to(device)
-        # Move the GSO
-        self.S = self.S.to(device)
+        # # Move the GSO
+        # self.S = self.S.to(device)
         
 class RNNforRegression(nn.Module):
     """
@@ -1985,7 +2008,9 @@ class RNNforRegression(nn.Module):
                  # Bias
                  bias,
                  # Final nonlinearity
-                 finalNonlinearity = None):
+                 finalNonlinearity = None,
+                 # device
+                 device=device):
         # Initialize parent:
         super().__init__()
         # Check whether the GSO has features or not. After that, always handle
@@ -2004,7 +2029,7 @@ class RNNforRegression(nn.Module):
         self.N = GSO.shape[1] # Number of nodes
         self.bias = bias # Boolean
         self.S_tensor = torch.tensor(GSO)
-        self.S = GSO
+        self.S = GSO.to(device)
         self.sigma1 = stateNonlinearity	 
         # Declare State RNN				
         self.RNN = torch.nn.RNN(self.N*self.F_i, self.F_h, num_layers=1,
@@ -2131,7 +2156,9 @@ class RNNforClassification(nn.Module):
                  # Bias
                  bias,
                  # Final nonlinearity
-                 finalNonlinearity = None):
+                 finalNonlinearity = None,
+                 # device
+                 device=device):
         # Initialize parent:
         super().__init__()
         # Check whether the GSO has features or not. After that, always handle
@@ -2150,7 +2177,7 @@ class RNNforClassification(nn.Module):
         self.N = GSO.shape[1] # Number of nodes
         self.bias = bias # Boolean
         self.S_tensor = torch.tensor(GSO)
-        self.S = GSO
+        self.S = GSO.to(device)
         self.sigma1 = stateNonlinearity	 
         # Declare State RNN				
         self.RNN = torch.nn.RNN(self.N*self.F_i, self.F_h, num_layers=1,

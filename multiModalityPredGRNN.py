@@ -169,7 +169,7 @@ lossFunction = misc.batchTimeL1Loss # This applies a softmax before feeding
 
 #\\\ Overall training options
 nEpochs = 20 # Number of epochs
-batchSize = 50 # Batch size
+batchSize = 25 # Batch size
 doLearningRateDecay = False # Learning rate decay
 learningRateDecayRate = 0.9 # Rate
 learningRateDecayPeriod = 1 # How many epochs after which update the lr
@@ -546,13 +546,12 @@ writeVarValues(varsFile,
 #####################################################################
 
 #\\\ Determine processing unit:
-# if torch.cuda.is_available():
-#     device = 'cuda:0'
-# else:
-#     device = 'cpu'
+if torch.cuda.is_available():
+    device = 'cuda'
+    torch.cuda.empty_cache()
+else:
+    device = 'cpu'
 
-#TODO: change all onto cuda compatible
-device = 'cpu'
 # Notify:
 if doPrint:
     print("Device selected: %s" % device)
@@ -643,7 +642,7 @@ for graph in range(nGraphRealizations):
         #   Now that we have the list of nodes we are using as sources, then we
         #   can go ahead and generate the datasets.
         data = Utils.dataTools.MultiModalityPrediction(G, nTrain, nValid, nTest, num_timestep, 
-                                                    F_t=F_t, pooltype='selectOne', #'avg', 'selectOne', 'weighted'
+                                                    F_t=F_t, pooltype='avg', #'avg', 'selectOne', 'weighted'
                                                     sigmaSpatial=sigmaSpatial, sigmaTemporal=sigmaTemporal,
                                                     rhoSpatial=rhoSpatial, rhoTemporal=rhoTemporal)
         data.astype(torch.float64)
@@ -1563,7 +1562,7 @@ for graph in range(nGraphRealizations):
         train.MultipleModels(modelsGNN, data,
                              nEpochs = nEpochs, batchSize = batchSize, seqLen = seqLen, 
                              F_t = F_t, assign_dicts = assign_dicts,
-                             stateFeat = F1, rnnStateFeat = rnnStateFeat,
+                             stateFeat = F1, rnnStateFeat = rnnStateFeat, device = device,
                              **trainingOptions)
 
         #%%##################################################################
@@ -1636,13 +1635,13 @@ for graph in range(nGraphRealizations):
                 # Process the samples
                 if 'GCRNN' in modelsGNN[key].name or 'gcrnn' in modelsGNN[key].name or \
                                                     'GCRnn' in modelsGNN[key].name:
-                    h0t = torch.zeros(nTest,F1,nNodes)
+                    h0t = torch.zeros(nTest,F1,nNodes).to(device)
                     yHatTest, y1HatTest = modelsGNN[key].archit(xTestOrdered,h0t)
                     
                 elif 'RNN' in modelsGNN[key].name or 'rnn' in modelsGNN[key].name or \
                                                     'Rnn' in modelsGNN[key].name:
                     ipdb.set_trace() # TODO: dealing with output
-                    h0t = torch.zeros(nTest,rnnStateFeat)
+                    h0t = torch.zeros(nTest,rnnStateFeat).to(device)
                     c0t = h0t
                     yHatTest = modelsGNN[key].archit(xTestOrdered,h0t,c0t)
                 else:
@@ -1705,13 +1704,13 @@ for graph in range(nGraphRealizations):
                 # Process the samples
                 if 'GCRNN' in modelsGNN[key].name or 'gcrnn' in modelsGNN[key].name or \
                                                     'GCRnn' in modelsGNN[key].name:
-                    h0t = torch.zeros(nTest,F1,nNodes)
+                    h0t = torch.zeros(nTest,F1,nNodes).to(device)
                     yHatTest, y1HatTest = modelsGNN[key].archit(xTestOrdered,h0t)
 
                 elif 'RNN' in modelsGNN[key].name or 'rnn' in modelsGNN[key].name or \
                                                     'Rnn' in modelsGNN[key].name:
                     ipdb.set_trace() # TODO: dealing with output
-                    h0t = torch.zeros(nTest,rnnStateFeat)
+                    h0t = torch.zeros(nTest,rnnStateFeat).to(device)
                     c0t = h0t
                     yHatTest = modelsGNN[key].archit(xTestOrdered,h0t,c0t)
                 else:

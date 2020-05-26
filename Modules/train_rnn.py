@@ -17,7 +17,7 @@ from scipy.io import savemat
 import ipdb
 
 def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen, 
-                F_t, assign_dicts, stateFeat, rnnStateFeat, **kwargs):
+                F_t, assign_dicts, stateFeat, rnnStateFeat, device, **kwargs):
     """
     Trains multiple models simultaneously
 
@@ -192,6 +192,7 @@ def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen,
     bestBatch = {}
 
     for epoch in range(nEpochs):
+        # print('Epoch', epoch)
 
         # Randomize dataset for each epoch
         randomPermutation = np.random.permutation(nTrain)
@@ -287,14 +288,14 @@ def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen,
                 if 'GCRNN' in modelsDict[key].name or 'gcrnn' in modelsDict[key].name or \
                                                     'GCRnn' in modelsDict[key].name:
                     # Obtain the output of the GCRNN
-                    h0 = torch.zeros(batchSize[batch],stateFeat,xTrainOrdered.shape[3])
+                    h0 = torch.zeros(batchSize[batch],stateFeat,xTrainOrdered.shape[3]).to(device)
                     yHatTrain, y1HatTrain = modelsDict[key].archit(xTrainOrdered, h0)
                 
                 elif 'RNN' in modelsDict[key].name or 'rnn' in modelsDict[key].name or \
                                             'Rnn' in modelsDict[key].name:
                     # Obtain the output of the RNN
                     ipdb.set_trace() # TODO: dealing with output
-                    h0 = torch.zeros(batchSize[batch],rnnStateFeat)
+                    h0 = torch.zeros(batchSize[batch],rnnStateFeat).to(device)
                     c0 = h0
                     yHatTrain = modelsDict[key].archit(xTrainOrdered, h0, c0)
                 else:
@@ -430,14 +431,14 @@ def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen,
                         # Obtain the output of the GNN
                         if 'GCRNN' in modelsDict[key].name or 'gcrnn' in modelsDict[key].name or \
                                                     'GCRnn' in modelsDict[key].name:
-                            h0v = torch.zeros(nValid,stateFeat,xValidOrdered.shape[3])
+                            h0v = torch.zeros(nValid,stateFeat,xValidOrdered.shape[3]).to(device)
                             yHatValid, y1HatValid = modelsDict[key].archit(xValidOrdered,h0v)
 
                         elif 'RNN' in modelsDict[key].name or 'rnn' in modelsDict[key].name or \
                                                     'Rnn' in modelsDict[key].name:
                             # Obtain the output of the GCRNN
                             ipdb.set_trace() # TODO: dealing with output
-                            h0v = torch.zeros(nValid,rnnStateFeat)
+                            h0v = torch.zeros(nValid,rnnStateFeat).to(device)
                             c0v = h0
                             yHatValid = modelsDict[key].archit(xValidOrdered,h0v,c0v)
                         else:
