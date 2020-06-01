@@ -14,6 +14,7 @@ import pickle
 import datetime
 
 from scipy.io import savemat
+from tqdm import tqdm
 import ipdb
 
 def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen, 
@@ -191,7 +192,7 @@ def MultipleModels(modelsDict, data, nEpochs, batchSize, seqLen,
     bestEpoch = {}
     bestBatch = {}
 
-    for epoch in range(nEpochs):
+    for epoch in tqdm(range(nEpochs)):
         # print('Epoch', epoch)
 
         # Randomize dataset for each epoch

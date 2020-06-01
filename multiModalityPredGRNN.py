@@ -34,8 +34,9 @@
 import os
 import numpy as np
 import matplotlib
-matplotlib.rcParams['text.usetex'] = True
+# matplotlib.rcParams['text.usetex'] = True
 matplotlib.rcParams['font.family'] = 'serif'
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import pickle
 import datetime
@@ -168,7 +169,7 @@ lossFunction = misc.batchTimeL1Loss # This applies a softmax before feeding
     # it into the NLL, so we don't have to apply the softmax ourselves.
 
 #\\\ Overall training options
-nEpochs = 20 # Number of epochs
+nEpochs = 100 # Number of epochs
 batchSize = 25 # Batch size
 doLearningRateDecay = False # Learning rate decay
 learningRateDecayRate = 0.9 # Rate
@@ -1706,7 +1707,10 @@ for graph in range(nGraphRealizations):
                                                     'GCRnn' in modelsGNN[key].name:
                     h0t = torch.zeros(nTest,F1,nNodes).to(device)
                     yHatTest, y1HatTest = modelsGNN[key].archit(xTestOrdered,h0t)
-
+                    # plt.figure()
+                    # plt.plot(yHatTest[0,:,0,0].cpu().numpy())
+                    # plt.plot(yTestModel[0,:,0,0].cpu().numpy())
+                    # plt.show()
                 elif 'RNN' in modelsGNN[key].name or 'rnn' in modelsGNN[key].name or \
                                                     'Rnn' in modelsGNN[key].name:
                     ipdb.set_trace() # TODO: dealing with output
@@ -1784,292 +1788,3 @@ for thisModel in modelList:
                 'stdDevAccBest%s' % thisModel: stdDevAccBest[thisModel],
                 'meanAccLast%s' % thisModel: meanAccLast[thisModel],
                 'stdDevAccLast%s' % thisModel : stdDevAccLast[thisModel]})
-
-#%%##################################################################
-#                                                                   #
-#                    PLOT                                           #
-#                                                                   #
-#####################################################################
-
-# Finally, we might want to plot several quantities of interest
-
-if doFigs and doSaveVars:
-
-    ###################
-    # DATA PROCESSING #
-    ###################
-
-    # Again, we have training and validation metrics (loss and accuracy
-    # -evaluation-) for many runs, so we need to carefully load them and compute
-    # the relevant statistics from these realizations.
-
-    #\\\ SAVE SPACE:
-    # Create the variables to save all the realizations. This is, again, a
-    # dictionary, where each key represents a model, and each model is a list
-    # of lists, one list for each graph, and one list for each data realization.
-    # Each data realization, in this case, is not a scalar, but a vector of
-    # length the number of training steps (or of validation steps)
-    lossTrain = {}
-    evalTrain = {}
-    lossValid = {}
-    evalValid = {}
-    # Initialize the graph dimension
-    for thisModel in modelList:
-        lossTrain[thisModel] = [None] * nGraphRealizations
-        evalTrain[thisModel] = [None] * nGraphRealizations
-        lossValid[thisModel] = [None] * nGraphRealizations
-        evalValid[thisModel] = [None] * nGraphRealizations
-        # Initialize the data realization dimension with empty lists to then
-        # append each realization when we load it.
-        for G in range(nGraphRealizations):
-            lossTrain[thisModel][G] = []
-            evalTrain[thisModel][G] = []
-            lossValid[thisModel][G] = []
-            evalValid[thisModel][G] = []
-
-    #\\\ FIGURES DIRECTORY:
-    saveDirFigs = os.path.join(saveDir,'figs')
-    # If it doesn't exist, create it.
-    if not os.path.exists(saveDirFigs):
-        os.makedirs(saveDirFigs)
-
-    #\\\ LOAD DATA:
-    # Path where the saved training variables should be
-    pathToTrainVars = os.path.join(saveDir,'trainVars')
-    # Get all the training files:
-    allTrainFiles = next(os.walk(pathToTrainVars))[2]
-    # Go over each of them (this can't be empty since we are also checking for
-    # doSaveVars to be true, what guarantees that the variables have been saved.
-    for file in allTrainFiles:
-        # Check that it is a pickle file
-        if '.pkl' in file:
-            # Open the file
-            with open(os.path.join(pathToTrainVars,file),'rb') as fileTrainVars:
-                # Load it
-                thisVarsDict = pickle.load(fileTrainVars)
-                # store them
-                nBatches = thisVarsDict['nBatches']
-                thisLossTrain = thisVarsDict['lossTrain']
-                thisEvalTrain = thisVarsDict['evalTrain']
-                thisLossValid = thisVarsDict['lossValid']
-                thisEvalValid = thisVarsDict['evalValid']
-                if 'graphNo' in thisVarsDict.keys():
-                    thisG = thisVarsDict['graphNo']
-                else:
-                    thisG = 0
-                if 'realizationNo' in thisVarsDict.keys():
-                    thisR = thisVarsDict['realizationNo']
-                else:
-                    thisR = 0
-                # And add them to the corresponding variables
-                for key in thisLossTrain.keys():
-                # This part matches each realization (saved with a different
-                # name due to identification of graph and data realization) with
-                # the specific model.
-                    for thisModel in modelList:
-                        if thisModel in key:
-                            lossTrain[thisModel][thisG] += [thisLossTrain[key]]
-                            evalTrain[thisModel][thisG] += [thisEvalTrain[key]]
-                            lossValid[thisModel][thisG] += [thisLossValid[key]]
-                            evalValid[thisModel][thisG] += [thisEvalValid[key]]
-    # Now that we have collected all the results, we have that each of the four
-    # variables (lossTrain, evalTrain, lossValid, evalValid) has a list of lists
-    # for each key in the dictionary. The first list goes through the graph, and
-    # for each graph, it goes through data realizations. Each data realization
-    # is actually an np.array.
-
-    #\\\ COMPUTE STATISTICS:
-    # The first thing to do is to transform those into a matrix with all the
-    # realizations, so create the variables to save that.
-    meanLossTrainPerGraph = {}
-    meanEvalTrainPerGraph = {}
-    meanLossValidPerGraph = {}
-    meanEvalValidPerGraph = {}
-    meanLossTrain = {}
-    meanEvalTrain = {}
-    meanLossValid = {}
-    meanEvalValid = {}
-    stdDevLossTrain = {}
-    stdDevEvalTrain = {}
-    stdDevLossValid = {}
-    stdDevEvalValid = {}
-    # Initialize the variables
-    for thisModel in modelList:
-        meanLossTrainPerGraph[thisModel] = [None] * nGraphRealizations
-        meanEvalTrainPerGraph[thisModel] = [None] * nGraphRealizations
-        meanLossValidPerGraph[thisModel] = [None] * nGraphRealizations
-        meanEvalValidPerGraph[thisModel] = [None] * nGraphRealizations
-        for G in range(nGraphRealizations):
-            # Transform into np.array
-            lossTrain[thisModel][G] = np.array(lossTrain[thisModel][G])
-            evalTrain[thisModel][G] = np.array(evalTrain[thisModel][G])
-            lossValid[thisModel][G] = np.array(lossValid[thisModel][G])
-            evalValid[thisModel][G] = np.array(evalValid[thisModel][G])
-            # So, finally, for each model and each graph, we have a np.array of
-            # shape:  nDataRealizations x number_of_training_steps
-            # And we have to average these to get the mean across all data
-            # realizations for each graph
-            meanLossTrainPerGraph[thisModel][G] = \
-                                    np.mean(lossTrain[thisModel][G], axis = 0)
-            meanEvalTrainPerGraph[thisModel][G] = \
-                                    np.mean(evalTrain[thisModel][G], axis = 0)
-            meanLossValidPerGraph[thisModel][G] = \
-                                    np.mean(lossValid[thisModel][G], axis = 0)
-            meanEvalValidPerGraph[thisModel][G] = \
-                                    np.mean(evalValid[thisModel][G], axis = 0)
-        # And then convert this into np.array for all graphs
-        meanLossTrainPerGraph[thisModel] = \
-                                    np.array(meanLossTrainPerGraph[thisModel])
-        meanEvalTrainPerGraph[thisModel] = \
-                                    np.array(meanEvalTrainPerGraph[thisModel])
-        meanLossValidPerGraph[thisModel] = \
-                                    np.array(meanLossValidPerGraph[thisModel])
-        meanEvalValidPerGraph[thisModel] = \
-                                    np.array(meanEvalValidPerGraph[thisModel])
-        # And compute the statistics
-        meanLossTrain[thisModel] = \
-                            np.mean(meanLossTrainPerGraph[thisModel], axis = 0)
-        meanEvalTrain[thisModel] = \
-                            np.mean(meanEvalTrainPerGraph[thisModel], axis = 0)
-        meanLossValid[thisModel] = \
-                            np.mean(meanLossValidPerGraph[thisModel], axis = 0)
-        meanEvalValid[thisModel] = \
-                            np.mean(meanEvalValidPerGraph[thisModel], axis = 0)
-        stdDevLossTrain[thisModel] = \
-                            np.std(meanLossTrainPerGraph[thisModel], axis = 0)
-        stdDevEvalTrain[thisModel] = \
-                            np.std(meanEvalTrainPerGraph[thisModel], axis = 0)
-        stdDevLossValid[thisModel] = \
-                            np.std(meanLossValidPerGraph[thisModel], axis = 0)
-        stdDevEvalValid[thisModel] = \
-                            np.std(meanEvalValidPerGraph[thisModel], axis = 0)
-
-    ####################
-    # SAVE FIGURE DATA #
-    ####################
-
-    # And finally, we can plot. But before, let's save the variables mean and
-    # stdDev so, if we don't like the plot, we can re-open them, and re-plot
-    # them, a piacere.
-    #   Pickle, first:
-    varsPickle = {}
-    varsPickle['nEpochs'] = nEpochs
-    varsPickle['nBatches'] = nBatches
-    varsPickle['meanLossTrain'] = meanLossTrain
-    varsPickle['stdDevLossTrain'] = stdDevLossTrain
-    varsPickle['meanEvalTrain'] = meanEvalTrain
-    varsPickle['stdDevEvalTrain'] = stdDevEvalTrain
-    varsPickle['meanLossValid'] = meanLossValid
-    varsPickle['stdDevLossValid'] = stdDevLossValid
-    varsPickle['meanEvalValid'] = meanEvalValid
-    varsPickle['stdDevEvalValid'] = stdDevEvalValid
-    with open(os.path.join(saveDirFigs,'figVars.pkl'), 'wb') as figVarsFile:
-        pickle.dump(varsPickle, figVarsFile)
-    #   Matlab, second:
-    varsMatlab = {}
-    varsMatlab['nEpochs'] = nEpochs
-    varsMatlab['nBatches'] = nBatches
-    for thisModel in modelList:
-        varsMatlab['meanLossTrain' + thisModel] = meanLossTrain[thisModel]
-        varsMatlab['stdDevLossTrain' + thisModel] = stdDevLossTrain[thisModel]
-        varsMatlab['meanEvalTrain' + thisModel] = meanEvalTrain[thisModel]
-        varsMatlab['stdDevEvalTrain' + thisModel] = stdDevEvalTrain[thisModel]
-        varsMatlab['meanLossValid' + thisModel] = meanLossValid[thisModel]
-        varsMatlab['stdDevLossValid' + thisModel] = stdDevLossValid[thisModel]
-        varsMatlab['meanEvalValid' + thisModel] = meanEvalValid[thisModel]
-        varsMatlab['stdDevEvalValid' + thisModel] = stdDevEvalValid[thisModel]
-    savemat(os.path.join(saveDirFigs, 'figVars.mat'), varsMatlab)
-
-    # ########
-    # # PLOT #
-    # ########
-
-    # # Compute the x-axis
-    # xTrain = np.arange(0, nEpochs * nBatches, xAxisMultiplierTrain)
-    # xValid = np.arange(0, nEpochs * nBatches, \
-    #                       validationInterval*xAxisMultiplierValid)
-
-    # # If we do not want to plot all the elements (to avoid overcrowded plots)
-    # # we need to recompute the x axis and take those elements corresponding
-    # # to the training steps we want to plot
-    # if xAxisMultiplierTrain > 1:
-    #     # Actual selected samples
-    #     selectSamplesTrain = xTrain
-    #     # Go and fetch tem
-    #     for thisModel in modelList:
-    #         meanLossTrain[thisModel] = meanLossTrain[thisModel]\
-    #                                                 [selectSamplesTrain]
-    #         stdDevLossTrain[thisModel] = stdDevLossTrain[thisModel]\
-    #                                                     [selectSamplesTrain]
-    #         meanEvalTrain[thisModel] = meanEvalTrain[thisModel]\
-    #                                                 [selectSamplesTrain]
-    #         stdDevEvalTrain[thisModel] = stdDevEvalTrain[thisModel]\
-    #                                                     [selectSamplesTrain]
-    # # And same for the validation, if necessary.
-    # if xAxisMultiplierValid > 1:
-    #     selectSamplesValid = np.arange(0, len(meanLossValid[thisModel]), \
-    #                                    xAxisMultiplierValid)
-    #     for thisModel in modelList:
-    #         meanLossValid[thisModel] = meanLossValid[thisModel]\
-    #                                                 [selectSamplesValid]
-    #         stdDevLossValid[thisModel] = stdDevLossValid[thisModel]\
-    #                                                     [selectSamplesValid]
-    #         meanEvalValid[thisModel] = meanEvalValid[thisModel]\
-    #                                                 [selectSamplesValid]
-    #         stdDevEvalValid[thisModel] = stdDevEvalValid[thisModel]\
-    #                                                     [selectSamplesValid]
-
-    # #\\\ LOSS (Training and validation) for EACH MODEL
-    # for key in meanLossTrain.keys():
-    #     lossFig = plt.figure(figsize=(1.61*5, 1*5))
-    #     plt.errorbar(xTrain, meanLossTrain[key], yerr = stdDevLossTrain[key],
-    #                  color = '#01256E', linewidth = 2,
-    #                  marker = 'o', markersize = 3)
-    #     plt.errorbar(xValid, meanLossValid[key], yerr = stdDevLossValid[key],
-    #                  color = '#95001A', linewidth = 2,
-    #                  marker = 'o', markersize = 3)
-    #     plt.ylabel(r'Loss')
-    #     plt.xlabel(r'Training steps')
-    #     plt.legend([r'Training', r'Validation'])
-    #     plt.title(r'%s' % key)
-    #     lossFig.savefig(os.path.join(saveDirFigs,'loss%s.pdf' % key),
-    #                     bbox_inches = 'tight')
-
-    # #\\\ ACCURACY (Training and validation) for EACH MODEL
-    # for key in meanEvalTrain.keys():
-    #     accFig = plt.figure(figsize=(1.61*5, 1*5))
-    #     plt.errorbar(xTrain, meanEvalTrain[key], yerr = stdDevEvalTrain[key],
-    #                  color = '#01256E', linewidth = 2,
-    #                  marker = 'o', markersize = 3)
-    #     plt.errorbar(xValid, meanEvalValid[key], yerr = stdDevEvalValid[key],
-    #                  color = '#95001A', linewidth = 2,
-    #                  marker = 'o', markersize = 3)
-    #     plt.ylabel(r'Accuracy')
-    #     plt.xlabel(r'Training steps')
-    #     plt.legend([r'Training', r'Validation'])
-    #     plt.title(r'%s' % key)
-    #     accFig.savefig(os.path.join(saveDirFigs,'eval%s.pdf' % key),
-    #                     bbox_inches = 'tight')
-
-    # # LOSS (training) for ALL MODELS
-    # allLossTrain = plt.figure(figsize=(1.61*5, 1*5))
-    # for key in meanLossTrain.keys():
-    #     plt.errorbar(xTrain, meanLossTrain[key], yerr = stdDevLossTrain[key],
-    #                  linewidth = 2, marker = 'o', markersize = 3)
-    # plt.ylabel(r'Loss')
-    # plt.xlabel(r'Training steps')
-    # plt.legend(list(meanLossTrain.keys()))
-    # allLossTrain.savefig(os.path.join(saveDirFigs,'allLossTrain.pdf'),
-    #                 bbox_inches = 'tight')
-
-    # # ACCURACY (validation) for ALL MODELS
-    # allEvalValid = plt.figure(figsize=(1.61*5, 1*5))
-    # for key in meanEvalValid.keys():
-    #     plt.errorbar(xValid, meanEvalValid[key], yerr = stdDevEvalValid[key],
-    #                  linewidth = 2, marker = 'o', markersize = 3)
-    # plt.ylabel(r'Accuracy')
-    # plt.xlabel(r'Training steps')
-    # plt.legend(list(meanEvalValid.keys()))
-    # allEvalValid.savefig(os.path.join(saveDirFigs,'allEvalValid.pdf'),
-    #                 bbox_inches = 'tight')
-    # 
