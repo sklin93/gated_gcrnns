@@ -109,15 +109,15 @@ saveSeed(randomStates, saveDir)
 # DATA #
 ########
 
-nNodes = 80 # Number of nodes
+nNodes = 200 # Number of nodes (fMRI regions)
 graphType = 'SBM' # Type of graph
-nCommunities = 5 # Number of communities
+nCommunities = 64 #64 # Number of communities
 graphOptions = {}
 graphOptions['nCommunities'] = 5 
 graphOptions['probIntra'] = 0.8 # Intracommunity probability
 graphOptions['probInter'] = 0.2 # Intercommunity probability
 
-nTrain = 100 # Number of training samples
+nTrain = 1450 # Number of training samples
 nValid = int(0.25 * nTrain) # Number of validation samples
 nTest = int(0.05 * nTrain) # Number of testing samples
 tMax = None # Maximum number of diffusion times (A^t for t < tMax)
@@ -126,7 +126,7 @@ nDataRealizations = 1 # Number of data realizations
 nGraphRealizations = 1 # Number of graph realizations
 
 K = 1 # predict signal K steps ahead
-num_timestep = 200
+num_timestep = 100
 seqLen = num_timestep - K # sequence length
 F_t = 5
 
@@ -170,7 +170,7 @@ lossFunction = misc.batchTimeL1Loss # This applies a softmax before feeding
 
 #\\\ Overall training options
 nEpochs = 100 # Number of epochs
-batchSize = 25 # Batch size
+batchSize = 2 # Batch size
 doLearningRateDecay = False # Learning rate decay
 learningRateDecayRate = 0.9 # Rate
 learningRateDecayPeriod = 1 # How many epochs after which update the lr
